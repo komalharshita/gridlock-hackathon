@@ -15,7 +15,7 @@ The final solution uses a leaderboard-informed, time-aware forecasting strategy.
 | Komal Harshita | Data & EDA Lead | Dataset audit, missing-value analysis, target distribution, traffic-pattern exploration |
 | Team Member 2 | Feature Engineering Lead | Time features, geohash/location statistics, road-context features, calibration features |
 | Team Member 3 | Modeling & Validation Lead | Chronological validation, model comparison, leaderboard-informed tuning |
-| Team Member 4 | Documentation & Delivery Lead | Notebook, reports, presentation, reproducibility, final packaging |
+| Abhijna | Documentation & Delivery Lead | Notebook, reports, presentation, reproducibility, final packaging |
 
 All team members share equal responsibility for final solution quality, experimentation, review, and submission decisions.
 
