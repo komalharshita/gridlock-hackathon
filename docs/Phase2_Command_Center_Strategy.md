@@ -16,6 +16,7 @@ To: What should authorities do before or immediately after it happens?
 Judges are likely to see many teams build similar congestion prediction dashboards from the same data. This repository can stand out by showing a decision workflow that converts predicted risk into:
 
 - operational risk level,
+- traffic mood indicator and situation chips for quick visual scanning,
 - estimated disruption duration,
 - recommended resource allocation,
 - diversion comparison,
@@ -76,7 +77,8 @@ Outputs:
 3. Download the command brief and explain that it can be shared with police control room teams.
 4. Switch to unplanned incident mode with an accident, two lanes blocked, and rain watch.
 5. Show how the operational score rises even if the model-only event risk is lower.
-6. Close with the message that the system supports both approval planning and live response.
+6. Point out the severity avatar and situation chips so judges can read the scenario at a glance.
+7. Close with the message that the system supports both approval planning and live response.
 
 ## Contribution Owner
 

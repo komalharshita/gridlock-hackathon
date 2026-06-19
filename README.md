@@ -15,6 +15,8 @@ For the event-driven congestion round, the Streamlit prototype extends the traff
 - planned event approval mode for rallies, processions, public events, VIP movement, and construction,
 - unplanned incident mode for accidents, breakdowns, debris, tree falls, waterlogging, and sudden congestion,
 - operational risk adjustment using preparation lead time, blocked lanes, weather watch, and peak-hour context,
+- visual traffic mood indicator and situation chips for fast severity reading during demos,
+- ready-made scenario presets for planned rallies, rainy accidents, and VIP movement,
 - resource allocation recommendations for officers, barricades, patrol vehicles, medical support, surveillance, and public advisory needs,
 - diversion scenario comparison with estimated delay savings,
 - downloadable command brief with risk drivers, resource plan, and response timeline.

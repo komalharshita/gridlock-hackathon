@@ -299,6 +299,97 @@ def make_command_brief(inputs, risk_score, risk_level, duration_min, busy_until,
 {timeline_lines}
 """
 
+def get_command_mood(risk_level, mode):
+    if risk_level == "Severe":
+        return {
+            "emoji": "😰",
+            "title": "High Alert",
+            "caption": "Control room should treat this as a priority disruption.",
+            "color": "#C62828",
+        }
+    if risk_level == "Moderate":
+        return {
+            "emoji": "😟",
+            "title": "Watch Closely",
+            "caption": "Extra deployment and active monitoring are recommended.",
+            "color": "#EF6C00",
+        }
+    if mode == "Unplanned Incident":
+        return {
+            "emoji": "🧐",
+            "title": "Verify Fast",
+            "caption": "Risk is low, but live incidents still need quick confirmation.",
+            "color": "#1565C0",
+        }
+    return {
+        "emoji": "🙂",
+        "title": "Manageable",
+        "caption": "Standard deployment should be enough with routine monitoring.",
+        "color": "#2E7D32",
+    }
+
+def get_situation_chips(inputs, risk_level):
+    chips = []
+    if inputs["mode"] == "Planned Event":
+        chips.append(("📅", "Planned approval"))
+        if inputs["lead_time"] >= 180:
+            chips.append(("🟢", "Strong prep window"))
+        elif inputs["lead_time"] < 60:
+            chips.append(("🕒", "Short prep window"))
+    else:
+        chips.append(("🚨", "Live incident"))
+        if inputs["lanes_blocked"] > 0:
+            chips.append(("🚧", f"{inputs['lanes_blocked']} lane(s) blocked"))
+
+    if inputs["rain_watch"]:
+        chips.append(("🌧️", "Rain watch"))
+
+    if inputs["hour"] in list(range(8, 11)) + list(range(17, 22)):
+        chips.append(("⏰", "Peak hour"))
+
+    chips.append(({"Minor": "🟢", "Moderate": "🟠", "Severe": "🔴"}[risk_level], f"{risk_level} risk"))
+    return chips
+
+def get_demo_presets():
+    return [
+        {
+            "name": "Evening Rally Surge",
+            "mode": "Planned Event",
+            "event_cause": "public_event",
+            "zone": "Central Zone 1",
+            "crowd_size": 20000,
+            "hour": 18,
+            "day": "Saturday",
+            "lead_time": 120,
+            "lanes_blocked": 0,
+            "rain_watch": False,
+        },
+        {
+            "name": "Rainy Accident Response",
+            "mode": "Unplanned Incident",
+            "event_cause": "accident",
+            "zone": "East Zone 1",
+            "crowd_size": 6000,
+            "hour": 9,
+            "day": "Monday",
+            "lead_time": 0,
+            "lanes_blocked": 2,
+            "rain_watch": True,
+        },
+        {
+            "name": "VIP Movement Prep",
+            "mode": "Planned Event",
+            "event_cause": "vip_movement",
+            "zone": "Central Zone 2",
+            "crowd_size": 5000,
+            "hour": 17,
+            "day": "Friday",
+            "lead_time": 240,
+            "lanes_blocked": 0,
+            "rain_watch": False,
+        },
+    ]
+
 def build_map(zone, risk_level, duration_min, hour):
     """
     Why Folium: free, no API key, works offline, renders in Streamlit.
@@ -389,40 +480,50 @@ ZONES = [
     'Unknown'
 ]
 DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+PRESETS = {preset["name"]: preset for preset in get_demo_presets()}
 
 # SIDEBAR — input form
 with st.sidebar:
+    preset_name = st.selectbox(
+        "Demo Scenario Preset",
+        ["Custom"] + list(PRESETS.keys()),
+        help="Use a ready-made situation for fast judging demos"
+    )
+    preset = PRESETS.get(preset_name, {})
+
     st.header("📋 Event Details")
     st.caption("Fill in details of the event to be approved")
 
     mode = st.radio(
         "Command Mode",
         ["Planned Event", "Unplanned Incident"],
+        index=["Planned Event", "Unplanned Incident"].index(preset.get("mode", "Planned Event")),
         horizontal=True
     )
     event_cause = st.selectbox("Event Type", EVENT_CAUSES,
-                                index=EVENT_CAUSES.index("public_event"))
-    zone = st.selectbox("Location (Zone)", ZONES)
+                                index=EVENT_CAUSES.index(preset.get("event_cause", "public_event")))
+    zone = st.selectbox("Location (Zone)", ZONES,
+                        index=ZONES.index(preset.get("zone", "Central Zone 1")))
     crowd_size = st.number_input(
         "Expected Crowd / Impact Size",
         min_value=10, max_value=500000,
-        value=20000, step=500,
+        value=preset.get("crowd_size", 20000), step=500,
         help="For incidents, use estimated affected road users or queue impact"
     )
-    hour = st.slider("Event Start Time (24hr)", 0, 23, 18,
+    hour = st.slider("Event Start Time (24hr)", 0, 23, preset.get("hour", 18),
                      help="18 = 6:00 PM")
-    day = st.selectbox("Day of Week", DAYS, index=5)
-    lead_time = 120
+    day = st.selectbox("Day of Week", DAYS, index=DAYS.index(preset.get("day", "Saturday")))
+    lead_time = preset.get("lead_time", 120)
     lanes_blocked = 0
     if mode == "Planned Event":
         lead_time = st.slider(
             "Preparation Lead Time (minutes)",
-            min_value=0, max_value=360, value=120, step=15
+            min_value=0, max_value=360, value=lead_time, step=15
         )
     else:
-        lanes_blocked = st.slider("Lanes Blocked", 0, 4, 1)
+        lanes_blocked = st.slider("Lanes Blocked", 0, 4, preset.get("lanes_blocked", 1))
 
-    rain_watch = st.checkbox("Rain / waterlogging watch", value=False)
+    rain_watch = st.checkbox("Rain / waterlogging watch", value=preset.get("rain_watch", False))
 
     st.divider()
     if st.button("🔍 Simulate Event Impact",
@@ -476,9 +577,38 @@ if predict_btn and "inputs" in st.session_state:
             inp, risk_score, risk, duration_median, busy_until, best,
             savings, resources, timeline, operational_reasons
         )
+        command_mood = get_command_mood(risk, inp["mode"])
+        situation_chips = get_situation_chips(inp, risk)
 
     # ---- SECTION 1: Digital Twin Impact ----
     st.subheader("🎭 Digital Twin — Predicted Impact")
+
+    st.markdown(
+        f"""
+        <div style="border-left: 8px solid {command_mood['color']};
+                    background: #ffffff; padding: 18px 20px; border-radius: 8px;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 14px;">
+            <div style="display:flex; align-items:center; gap:16px;">
+                <div style="font-size:56px; line-height:1;">{command_mood['emoji']}</div>
+                <div>
+                    <div style="font-size:24px; font-weight:700; color:{command_mood['color']};">
+                        {command_mood['title']}
+                    </div>
+                    <div style="font-size:15px; color:#3f3f46;">{command_mood['caption']}</div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    chip_html = " ".join(
+        f"<span style='display:inline-block;background:#F3F4F6;border:1px solid #D1D5DB;"
+        f"border-radius:999px;padding:6px 10px;margin:0 6px 8px 0;font-size:14px;'>"
+        f"{icon} {label}</span>"
+        for icon, label in situation_chips
+    )
+    st.markdown(chip_html, unsafe_allow_html=True)
 
     col_score, col_level, col_time = st.columns(3)
     col_score.metric("⚡ Risk Score", f"{risk_score}/100")
