@@ -5,8 +5,12 @@ import numpy as np
 import joblib
 import plotly.graph_objects as go
 import folium
+from src.resource_optimizer import recommend_resources
+from src.report_generator import generate_report
+from src.scenario_engine import calculate_risk
 from streamlit_folium import st_folium
 from pathlib import Path
+ASSETS = Path("assets")
 
 st.set_page_config(
     page_title="Gridlock Digital Twin",
@@ -206,6 +210,7 @@ def build_map(zone, risk_level, duration_min, hour):
     folium.Circle(
         location=[lat, lng],
         radius=radius_meters,
+        impact_radius = radius_meters / 1000,
         color="#E24B4A",
         fill=True,
         fill_opacity=0.25,
@@ -260,10 +265,21 @@ def build_map(zone, risk_level, duration_min, hour):
 # -------------------------------------------------------
 # UI
 # -------------------------------------------------------
-st.title("🚦 Gridlock Digital Twin")
-st.caption("Pre-Event Impact Simulator for Traffic Management — Team APIcalypse Now")
-st.divider()
+col1, col2 = st.columns([4,1])
 
+with col1:
+    st.title("🚦 Gridlock Digital Twin")
+    st.caption(
+        "Pre-Event Impact Simulator for Traffic Management — Team APIcalypse Now"
+    )
+
+with col2:
+    st.image(
+        "https://cdn-icons-png.flaticon.com/512/3202/3202926.png",
+        width=120
+    )
+
+st.divider()
 EVENT_CAUSES = sorted([
     'accident', 'congestion', 'construction', 'Debris',
     'Fog / Low Visibility', 'others', 'pot_holes', 'procession',
@@ -278,6 +294,31 @@ ZONES = [
     'West Zone 1', 'West Zone 2',
     'Unknown'
 ]
+LOCATIONS = [
+    "Silk Board",
+    "Electronic City",
+    "Whitefield",
+    "Hebbal",
+    "KR Puram",
+    "Majestic",
+    "Marathahalli",
+    "Bellandur",
+    "Koramangala",
+    "Indiranagar"
+]
+
+LOCATION_TO_ZONE = {
+    "Silk Board": "South Zone 1",
+    "Electronic City": "South Zone 2",
+    "Whitefield": "East Zone 1",
+    "Hebbal": "North Zone 1",
+    "KR Puram": "East Zone 2",
+    "Majestic": "Central Zone 1",
+    "Marathahalli": "East Zone 2",
+    "Bellandur": "South Zone 2",
+    "Koramangala": "South Zone 1",
+    "Indiranagar": "Central Zone 2"
+}
 DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 
 # SIDEBAR — input form
@@ -287,7 +328,12 @@ with st.sidebar:
 
     event_cause = st.selectbox("Event Type", EVENT_CAUSES,
                                 index=EVENT_CAUSES.index("public_event"))
-    zone = st.selectbox("Location (Zone)", ZONES)
+    location = st.selectbox(
+    "Location",
+    LOCATIONS
+)
+
+    zone = LOCATION_TO_ZONE[location]
     crowd_size = st.number_input(
         "Expected Crowd Size (exact number)",
         min_value=10, max_value=500000,
@@ -297,6 +343,15 @@ with st.sidebar:
     hour = st.slider("Event Start Time (24hr)", 0, 23, 18,
                      help="18 = 6:00 PM")
     day = st.selectbox("Day of Week", DAYS, index=5)
+    weather = st.selectbox(
+    "Weather Condition",
+    [
+        "Clear",
+        "Rain",
+        "Heavy Rain",
+        "Fog"
+    ]
+)
 
     st.divider()
     if st.button("🔍 Simulate Event Impact",
@@ -304,8 +359,10 @@ with st.sidebar:
         st.session_state["submitted"] = True
         st.session_state["inputs"] = {
             "event_cause": event_cause,
+            "location": location,
             "zone": zone,
             "crowd_size": crowd_size,
+            "weather": weather,
             "hour": hour,
             "day": day,
         }
@@ -322,7 +379,33 @@ if predict_btn and "inputs" in st.session_state:
         )
         risk = risk_result["risk_level"]
         risk_score = risk_result["risk_score"]
+ 
+        if risk == "Minor":
+            mascot = "😊🚦"
+            mascot_msg = "All clear! Traffic looks manageable."
+
+        elif risk == "Moderate":
+            mascot = "🤔🚦"
+            mascot_msg = "Diversions may help here."
+
+        else:
+            mascot = "😨🚦"
+            mascot_msg = "High risk detected!"
+                
+
+
+        #crowd ke stufuff
         crowd_level = risk_result["crowd_level"]
+        if risk_score < 30:
+            recommendation = "Approve"
+
+        elif risk_score < 70:
+            recommendation = "Approve With Conditions"
+
+        else:
+            recommendation = "High Risk - Additional Review Required"
+        st.subheader("🏛 Event Approval Recommendation")
+        st.info(recommendation)
 
         duration_median, duration_min, duration_max, data_points = predict_duration(event_cause)
         busy_until = (hour + duration_median // 60) % 24
@@ -332,12 +415,34 @@ if predict_btn and "inputs" in st.session_state:
         past_events = get_past_similar_events(event_cause, zone)
 
     # ---- SECTION 1: Digital Twin Impact ----
-    st.subheader("🎭 Digital Twin — Predicted Impact")
+    col_left, col_right = st.columns([5,1])
+
+    with col_left:
+        st.subheader("🎭 Digital Twin — Predicted Impact")
+
+    with col_right:
+        st.markdown(
+        f"""
+        <div style='text-align:center;font-size:80px'>
+        {mascot}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.info(f"🚦 Griddy says: {mascot_msg}")
+
+    st.info(f"🚦 Griddy says: {mascot_msg}")
+
+
+    st.write(f"📍 Location: {inp['location']}")
+    st.info(f"🌦 Weather Condition: {inp['weather']}")
 
     col_score, col_level, col_time = st.columns(3)
     col_score.metric("⚡ Risk Score", f"{risk_score}/100")
     col_level.metric("🎯 Risk Level", risk)
     col_time.metric("⏱️ Area Busy Until", f"~{busy_until:02d}:00")
+    st.progress(risk_score / 100)
 
     if risk == "Minor":
         st.success(f"✅ **{risk} Risk ({risk_score}/100)** — Manageable with standard deployment")
@@ -345,7 +450,68 @@ if predict_btn and "inputs" in st.session_state:
         st.warning(f"⚠️ **{risk} Risk ({risk_score}/100)** — Increased disruption expected, enhanced deployment needed")
     else:
         st.error(f"🚨 **{risk} Risk ({risk_score}/100)** — High disruption, road closure highly probable")
+    
+    st.subheader("🚨 Emergency Escalation")
+    if risk == "Severe":
 
+        st.error("""
+    Immediate coordination recommended:
+
+    🚔 Traffic Control Room: 103
+
+    🚓 Police Emergency: 112
+
+    🚑 Ambulance: 108
+
+    🚒 Fire Services: 101
+
+    🏛 BBMP Emergency Response
+
+    🚍 BMTC Control Room
+
+    """)
+if event_cause == "accident":
+
+    st.warning("""
+    Contact:
+    • Ambulance 108
+    • Police 112
+    • Fire 101
+    """)
+if event_cause == "public_event":
+
+    st.warning("""
+    Contact:
+    • Traffic Control Room
+    • BMTC
+    • Local Police Station
+    """)
+
+if event_cause == "water_logging":
+
+    st.warning("""
+    Contact:
+    • BBMP
+    • BWSSB
+    • Traffic Police
+    """)
+    st.metric(
+        "Response Priority",
+        "HIGH"
+    )
+    if risk == "Severe":
+        priority = "HIGH"
+
+    elif risk == "Moderate":
+        priority = "MEDIUM"
+
+    else:
+        priority = "LOW"
+
+    st.metric(
+        "Response Priority",
+        priority
+    )
     # Confidence breakdown
     conf = risk_result["confidence"]
     c1, c2, c3 = st.columns(3)
@@ -384,11 +550,22 @@ if predict_btn and "inputs" in st.session_state:
     # Duration prediction
     st.divider()
     st.markdown("**⏱️ Expected Event Duration (based on past similar events):**")
-    d1, d2, d3, d4 = st.columns(4)
+    d1, d2, d3, d4, d5 = st.columns(5)
     d1.metric("Typical Duration", f"{duration_median} min")
     d2.metric("Minimum", f"{duration_min} min")
     d3.metric("Maximum", f"{duration_max} min")
     d4.metric("Based on", f"{data_points} records" if data_points > 0 else "Domain estimate")
+    if risk == "Minor":
+        impact_radius = 0.4
+    elif risk == "Moderate":
+        impact_radius = 0.7
+    else:
+        impact_radius = 1.1
+
+    d5.metric(
+        "🌍 Impact Radius",
+        f"{impact_radius:.1f} km"
+    )
 
     # Past similar events
     st.divider()
@@ -433,15 +610,102 @@ if predict_btn and "inputs" in st.session_state:
     st.plotly_chart(fig, use_container_width=True)
     savings = scenarios["No Diversion"] - scenarios[best]
     st.success(f"✅ Best Strategy: **{best}** — saves ~{savings} minutes vs no action")
+    # ==========================
+# PUBLIC ADVISORY
+# ==========================
+
+    st.subheader("📢 Public Advisory")
+
+    advisory = f"""
+    TRAFFIC ADVISORY
+
+    Location: {inp['location']}
+
+    Heavy congestion expected near {inp['location']}.
+
+    Event Type:
+    {event_cause.replace('_',' ').title()}
+
+    Expected Crowd:
+    {crowd_size:,}
+
+    Risk Level:
+    {risk}
+
+    Suggested Diversion:
+    {best}
+
+    Avoid travel between
+    {hour}:00 and {busy_until}:00
+    """
+
+    st.code(advisory)
+
+    st.download_button(
+        "📥 Download Advisory",
+        advisory,
+        file_name="traffic_advisory.txt"
+    )
 
     st.divider()
-
     # ---- SECTION 4: Map ----
     st.subheader("🗺️ Affected Area & Diversion Routes")
     st.caption("Red = affected zone | Green = Route B diversion | Purple = Early closure route")
 
     event_map = build_map(zone, risk, duration_median, hour)
     st_folium(event_map, use_container_width=True, height=500)
+    st.divider()
+
+    st.subheader("📄 Traffic Advisory Report")
+    report = f"""
+    TRAFFIC ADVISORY REPORT
+
+    Event Type: {event_cause}
+    Zone: {zone}
+
+    Risk Level: {risk}
+    Risk Score: {risk_score}/100
+
+    Expected Crowd: {crowd_size}
+
+    Expected Duration:
+    {duration_median} mins
+
+    Best Diversion Strategy:
+    {best}
+
+    Recommended Resources:
+    """
+    for resource, count in resources.items():
+        report += f"\n{resource}: {count}"
+    st.text(report)
+    st.download_button(
+    "📥 Download Advisory Report",
+    report,
+    file_name="traffic_advisory.txt"
+)
+    st.subheader("💰 Estimated Resource Cost")
+    RESOURCE_COST = {
+    "👮 Traffic Officers": 1500,
+    "🚧 Barricades": 500,
+    "🚔 Patrol Vehicles": 3000,
+    "🚑 Ambulances on Standby": 5000,
+    "🚒 Fire Brigade Units": 10000,
+    "📹 CCTV/Surveillance": 1000,
+    "🏥 First Aid Posts": 2000,
+    "🚌 Bus Route Diversions": 1500,
+    "🔊 PA System Units": 800
+}
+    total_cost = 0
+
+    for resource, count in resources.items():
+        total_cost += RESOURCE_COST.get(resource, 0) * count
+
+    st.metric(
+        "Estimated Deployment Cost",
+        f"₹{total_cost:,.0f}"
+    )
+            
 
 else:
     st.info("👈 Fill in event details on the left and click **Simulate Event Impact**")
