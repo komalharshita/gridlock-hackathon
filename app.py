@@ -1,4 +1,4 @@
-
+import shap
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -99,6 +99,61 @@ def predict_event_risk(event_cause, crowd_size, zone, hour, day_of_week):
         "confidence": proba_dict,
         "crowd_level": crowd_level,
     }
+
+def explain_prediction(event_cause, crowd_size, zone, hour, day_of_week, crowd_level):
+    """
+    Why: shows officers/judges WHICH factors drove the risk score,
+    not just the final number. Builds trust in the model.
+    """
+    is_weekend = day_of_week in ["Saturday", "Sunday"]
+    feature_cols = ["event_cause", "crowd_proxy", "zone", "hour", "day_of_week", "is_weekend"]
+
+    row = pd.DataFrame([{
+        "event_cause": encoders["event_cause"].transform([event_cause])[0]
+            if event_cause in encoders["event_cause"].classes_ else 0,
+        "crowd_proxy": encoders["crowd_proxy"].transform([crowd_level])[0]
+            if crowd_level in encoders["crowd_proxy"].classes_ else 0,
+        "zone": encoders["zone"].transform([zone])[0]
+            if zone in encoders["zone"].classes_ else 0,
+        "hour": hour,
+        "day_of_week": encoders["day_of_week"].transform([day_of_week])[0]
+            if day_of_week in encoders["day_of_week"].classes_ else 0,
+        "is_weekend": int(is_weekend),
+    }])[feature_cols]
+
+    explainer = shap.TreeExplainer(clf)
+    shap_values = explainer.shap_values(row)
+
+    pred_idx = list(clf.classes_).index(clf.predict(row)[0])
+
+    # Handle all possible shapes shap can return
+    if isinstance(shap_values, list):
+        # list of arrays, one per class: shape (n_samples, n_features)
+        values = np.array(shap_values[pred_idx][0]).flatten()
+    else:
+        shap_values = np.array(shap_values)
+        if shap_values.ndim == 3:
+            # shape: (n_samples, n_features, n_classes)
+            values = shap_values[0, :, pred_idx].flatten()
+        elif shap_values.ndim == 2:
+            # shape: (n_samples, n_features) — binary or already class-specific
+            values = shap_values[0].flatten()
+        else:
+            values = shap_values.flatten()
+
+    readable_names = {
+        "event_cause": "Event Type",
+        "crowd_proxy": "Crowd Size",
+        "zone": "Zone/Location",
+        "hour": "Time of Day",
+        "day_of_week": "Day of Week",
+        "is_weekend": "Weekend?",
+    }
+    result = pd.DataFrame({
+        "Factor": [readable_names[c] for c in feature_cols],
+        "Impact": values
+    }).sort_values("Impact", key=abs, ascending=False)
+    return result
 
 def get_past_similar_events(event_cause, zone, limit=5):
     """
@@ -464,6 +519,17 @@ def build_map(zone, risk_level, duration_min, hour):
 st.title("🚦 Gridlock Digital Twin")
 st.caption("Pre-Event Impact Simulator for Traffic Management — Team APIcalypse Now")
 st.divider()
+# -------------------------------------------------------
+# KPI DASHBOARD — shows overview stats before any input
+# Why: gives judges instant proof the system is built on real data
+# -------------------------------------------------------
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("📊 Total Events Analyzed", f"{len(df):,}")
+k2.metric("🚧 Road Closure Events", f"{int(df['requires_road_closure'].sum()):,}")
+k3.metric("🔴 High Priority Events", f"{(df['priority']=='High').sum():,}")
+top_cause = df['event_cause'].value_counts().idxmax()
+k4.metric("⚠️ Most Common Cause", top_cause.replace('_',' ').title())
+st.divider()
 
 EVENT_CAUSES = sorted([
     'accident', 'congestion', 'construction', 'Debris',
@@ -626,6 +692,25 @@ if predict_btn and "inputs" in st.session_state:
         st.warning(f"⚠️ **{risk} Risk ({risk_score}/100)** — Increased disruption expected, enhanced deployment needed")
     else:
         st.error(f"🚨 **{risk} Risk ({risk_score}/100)** — High disruption, road closure highly probable")
+
+    # ---- Explainability ----
+    st.markdown("**🔍 Why this prediction? (Top factors)**")
+    explain_df = explain_prediction(
+        inp["event_cause"], inp["crowd_size"], inp["zone"],
+        inp["hour"], inp["day"], crowd_level
+    )
+    fig_explain = go.Figure(go.Bar(
+        x=explain_df["Impact"],
+        y=explain_df["Factor"],
+        orientation="h",
+        marker_color=["#E24B4A" if v > 0 else "#1D9E75" for v in explain_df["Impact"]],
+    ))
+    fig_explain.update_layout(
+        xaxis_title="Impact on Risk (right=increases risk, left=decreases)",
+        height=300, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig_explain, use_container_width=True)
+    st.divider()
 
     # Confidence breakdown
     conf = risk_result["confidence"]
