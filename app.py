@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
 from pathlib import Path
+import sys
+sys.path.insert(0, "src")
 import traffic_network as tn
 
 # Configure Page
@@ -68,7 +70,29 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+# -------------------------------------------------------
+# KPI DASHBOARD — overview stats shown on every page load
+# -------------------------------------------------------
+def render_kpi_dashboard(df):
+    total_events = len(df)
+    road_closures = int(df['requires_road_closure'].sum())
+    high_priority = int((df['priority'] == 'High').sum())
+    top_cause = df['event_cause'].value_counts().idxmax().replace('_', ' ').title()
 
+    k1, k2, k3, k4 = st.columns(4)
+    cards = [
+        (k1, "Total Events Analyzed", f"{total_events:,}"),
+        (k2, "Road Closure Events", f"{road_closures:,}"),
+        (k3, "High Priority Events", f"{high_priority:,}"),
+        (k4, "Most Common Cause", top_cause),
+    ]
+    for col, title, value in cards:
+        col.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-title">{title}</div>
+            <div class="metric-value">{value}</div>
+        </div>
+        """, unsafe_allow_html=True)
 # -------------------------------------------------------
 # CORE FUNCTIONS
 # -------------------------------------------------------
@@ -547,6 +571,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 st.caption("Proactive Event Impact Simulator & Mitigation Engine — Team APIcalypse Now")
+
+render_kpi_dashboard(df)
+
 st.divider()
 
 # Load preset configurations
