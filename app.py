@@ -6,7 +6,9 @@ import joblib
 import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
+import sys
 from pathlib import Path
+sys.path.append(str(Path(__file__).parent / "src"))
 import traffic_network as tn
 
 # Configure Page
