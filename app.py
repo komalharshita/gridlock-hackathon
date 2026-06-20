@@ -189,6 +189,207 @@ def get_diversion_scenarios(risk_level, crowd_size, duration_min):
         "Early Road Closure":  round(total * 0.35),
     }
 
+def level_from_score(score):
+    if score >= 75:
+        return "Severe"
+    if score >= 45:
+        return "Moderate"
+    return "Minor"
+
+def adjust_operational_risk(base_score, event_cause, hour, mode, lead_time_min,
+                            lanes_blocked, rain_watch):
+    """
+    Adds field-operations context on top of the trained event model.
+    This keeps the ML model intact while making the prototype useful for
+    planned approvals and unplanned incident response.
+    """
+    score = int(base_score)
+    reasons = []
+
+    if mode == "Unplanned Incident":
+        score += 12
+        reasons.append("unplanned incident requires faster response")
+
+    if event_cause in ["accident", "tree_fall", "Debris", "debris", "water_logging"]:
+        score += 8
+        reasons.append("incident type can block lanes or slow clearance")
+
+    if lanes_blocked >= 2:
+        score += 15
+        reasons.append("two or more lanes blocked")
+    elif lanes_blocked == 1:
+        score += 8
+        reasons.append("one lane blocked")
+
+    if rain_watch:
+        score += 10
+        reasons.append("rain or waterlogging watch")
+
+    if mode == "Planned Event":
+        if lead_time_min < 60:
+            score += 10
+            reasons.append("less than one hour of preparation time")
+        elif lead_time_min >= 180:
+            score -= 5
+            reasons.append("three or more hours available for preparation")
+
+    if hour in list(range(8, 11)) + list(range(17, 22)):
+        score += 8
+        reasons.append("peak traffic window")
+
+    score = max(0, min(100, score))
+    return score, level_from_score(score), reasons
+
+def build_response_timeline(mode, risk_level, best_strategy, lead_time_min):
+    if mode == "Planned Event":
+        prep = max(30, min(lead_time_min, 180))
+        return [
+            f"T-{prep} min: confirm event footprint, control room owner, and junction list",
+            "T-60 min: pre-position officers, barricades, patrol vehicle, and advisory messages",
+            f"T-30 min: activate {best_strategy.lower()} and verify emergency corridor",
+            "T+0 min onward: monitor CCTV density every 15 minutes and update diversion status",
+        ]
+
+    severe_step = "open emergency corridor and notify ambulance/fire control"
+    if risk_level != "Severe":
+        severe_step = "keep emergency corridor ready if queue length increases"
+    return [
+        "0-5 min: verify incident location, lanes blocked, and nearest junction impact",
+        "5-10 min: dispatch patrol vehicle and traffic officers to the affected approach",
+        f"10-20 min: activate {best_strategy.lower()} and publish public advisory",
+        f"20+ min: {severe_step}",
+    ]
+
+def make_command_brief(inputs, risk_score, risk_level, duration_min, busy_until,
+                       best_strategy, savings, resources, timeline,
+                       operational_reasons):
+    resource_lines = "\n".join(
+        f"- {name}: {count}" for name, count in resources.items()
+    )
+    timeline_lines = "\n".join(f"- {item}" for item in timeline)
+    reason_lines = "\n".join(f"- {item}" for item in operational_reasons) or "- No extra operational risk factors"
+
+    return f"""# Gridlock Command Brief
+
+## Scenario
+- Mode: {inputs['mode']}
+- Event/Incident Type: {inputs['event_cause']}
+- Zone: {inputs['zone']}
+- Crowd / impact estimate: {inputs['crowd_size']:,}
+- Start / report hour: {inputs['hour']:02d}:00
+- Day: {inputs['day']}
+- Lanes blocked: {inputs['lanes_blocked']}
+- Rain / waterlogging watch: {'Yes' if inputs['rain_watch'] else 'No'}
+
+## Predicted Impact
+- Operational risk score: {risk_score}/100
+- Risk level: {risk_level}
+- Typical disruption duration: {duration_min} minutes
+- Area busy until: ~{busy_until:02d}:00
+- Best diversion strategy: {best_strategy}
+- Delay saved versus no action: ~{savings} minutes
+
+## Operational Risk Drivers
+{reason_lines}
+
+## Resource Plan
+{resource_lines}
+
+## Response Timeline
+{timeline_lines}
+"""
+
+def get_command_mood(risk_level, mode):
+    if risk_level == "Severe":
+        return {
+            "emoji": "😰",
+            "title": "High Alert",
+            "caption": "Control room should treat this as a priority disruption.",
+            "color": "#C62828",
+        }
+    if risk_level == "Moderate":
+        return {
+            "emoji": "😟",
+            "title": "Watch Closely",
+            "caption": "Extra deployment and active monitoring are recommended.",
+            "color": "#EF6C00",
+        }
+    if mode == "Unplanned Incident":
+        return {
+            "emoji": "🧐",
+            "title": "Verify Fast",
+            "caption": "Risk is low, but live incidents still need quick confirmation.",
+            "color": "#1565C0",
+        }
+    return {
+        "emoji": "🙂",
+        "title": "Manageable",
+        "caption": "Standard deployment should be enough with routine monitoring.",
+        "color": "#2E7D32",
+    }
+
+def get_situation_chips(inputs, risk_level):
+    chips = []
+    if inputs["mode"] == "Planned Event":
+        chips.append(("📅", "Planned approval"))
+        if inputs["lead_time"] >= 180:
+            chips.append(("🟢", "Strong prep window"))
+        elif inputs["lead_time"] < 60:
+            chips.append(("🕒", "Short prep window"))
+    else:
+        chips.append(("🚨", "Live incident"))
+        if inputs["lanes_blocked"] > 0:
+            chips.append(("🚧", f"{inputs['lanes_blocked']} lane(s) blocked"))
+
+    if inputs["rain_watch"]:
+        chips.append(("🌧️", "Rain watch"))
+
+    if inputs["hour"] in list(range(8, 11)) + list(range(17, 22)):
+        chips.append(("⏰", "Peak hour"))
+
+    chips.append(({"Minor": "🟢", "Moderate": "🟠", "Severe": "🔴"}[risk_level], f"{risk_level} risk"))
+    return chips
+
+def get_demo_presets():
+    return [
+        {
+            "name": "Evening Rally Surge",
+            "mode": "Planned Event",
+            "event_cause": "public_event",
+            "zone": "Central Zone 1",
+            "crowd_size": 20000,
+            "hour": 18,
+            "day": "Saturday",
+            "lead_time": 120,
+            "lanes_blocked": 0,
+            "rain_watch": False,
+        },
+        {
+            "name": "Rainy Accident Response",
+            "mode": "Unplanned Incident",
+            "event_cause": "accident",
+            "zone": "East Zone 1",
+            "crowd_size": 6000,
+            "hour": 9,
+            "day": "Monday",
+            "lead_time": 0,
+            "lanes_blocked": 2,
+            "rain_watch": True,
+        },
+        {
+            "name": "VIP Movement Prep",
+            "mode": "Planned Event",
+            "event_cause": "vip_movement",
+            "zone": "Central Zone 2",
+            "crowd_size": 5000,
+            "hour": 17,
+            "day": "Friday",
+            "lead_time": 240,
+            "lanes_blocked": 0,
+            "rain_watch": False,
+        },
+    ]
+
 def build_map(zone, risk_level, duration_min, hour):
     """
     Why Folium: free, no API key, works offline, renders in Streamlit.
@@ -279,35 +480,65 @@ ZONES = [
     'Unknown'
 ]
 DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+PRESETS = {preset["name"]: preset for preset in get_demo_presets()}
 
 # SIDEBAR — input form
 with st.sidebar:
+    preset_name = st.selectbox(
+        "Demo Scenario Preset",
+        ["Custom"] + list(PRESETS.keys()),
+        help="Use a ready-made situation for fast judging demos"
+    )
+    preset = PRESETS.get(preset_name, {})
+
     st.header("📋 Event Details")
     st.caption("Fill in details of the event to be approved")
 
-    event_cause = st.selectbox("Event Type", EVENT_CAUSES,
-                                index=EVENT_CAUSES.index("public_event"))
-    zone = st.selectbox("Location (Zone)", ZONES)
-    crowd_size = st.number_input(
-        "Expected Crowd Size (exact number)",
-        min_value=10, max_value=500000,
-        value=20000, step=500,
-        help="Enter exact expected headcount"
+    mode = st.radio(
+        "Command Mode",
+        ["Planned Event", "Unplanned Incident"],
+        index=["Planned Event", "Unplanned Incident"].index(preset.get("mode", "Planned Event")),
+        horizontal=True
     )
-    hour = st.slider("Event Start Time (24hr)", 0, 23, 18,
+    event_cause = st.selectbox("Event Type", EVENT_CAUSES,
+                                index=EVENT_CAUSES.index(preset.get("event_cause", "public_event")))
+    zone = st.selectbox("Location (Zone)", ZONES,
+                        index=ZONES.index(preset.get("zone", "Central Zone 1")))
+    crowd_size = st.number_input(
+        "Expected Crowd / Impact Size",
+        min_value=10, max_value=500000,
+        value=preset.get("crowd_size", 20000), step=500,
+        help="For incidents, use estimated affected road users or queue impact"
+    )
+    hour = st.slider("Event Start Time (24hr)", 0, 23, preset.get("hour", 18),
                      help="18 = 6:00 PM")
-    day = st.selectbox("Day of Week", DAYS, index=5)
+    day = st.selectbox("Day of Week", DAYS, index=DAYS.index(preset.get("day", "Saturday")))
+    lead_time = preset.get("lead_time", 120)
+    lanes_blocked = 0
+    if mode == "Planned Event":
+        lead_time = st.slider(
+            "Preparation Lead Time (minutes)",
+            min_value=0, max_value=360, value=lead_time, step=15
+        )
+    else:
+        lanes_blocked = st.slider("Lanes Blocked", 0, 4, preset.get("lanes_blocked", 1))
+
+    rain_watch = st.checkbox("Rain / waterlogging watch", value=preset.get("rain_watch", False))
 
     st.divider()
     if st.button("🔍 Simulate Event Impact",
                  use_container_width=True, type="primary"):
         st.session_state["submitted"] = True
         st.session_state["inputs"] = {
+            "mode": mode,
             "event_cause": event_cause,
             "zone": zone,
             "crowd_size": crowd_size,
             "hour": hour,
             "day": day,
+            "lead_time": lead_time,
+            "lanes_blocked": lanes_blocked,
+            "rain_watch": rain_watch,
         }
 
 predict_btn = st.session_state.get("submitted", False)
@@ -320,24 +551,74 @@ if predict_btn and "inputs" in st.session_state:
             inp["event_cause"], inp["crowd_size"],
             inp["zone"], inp["hour"], inp["day"]
         )
-        risk = risk_result["risk_level"]
-        risk_score = risk_result["risk_score"]
+        model_risk = risk_result["risk_level"]
+        model_risk_score = risk_result["risk_score"]
+        risk_score, risk, operational_reasons = adjust_operational_risk(
+            model_risk_score,
+            inp["event_cause"],
+            inp["hour"],
+            inp["mode"],
+            inp["lead_time"],
+            inp["lanes_blocked"],
+            inp["rain_watch"],
+        )
         crowd_level = risk_result["crowd_level"]
 
-        duration_median, duration_min, duration_max, data_points = predict_duration(event_cause)
-        busy_until = (hour + duration_median // 60) % 24
+        duration_median, duration_min, duration_max, data_points = predict_duration(inp["event_cause"])
+        busy_until = (inp["hour"] + duration_median // 60) % 24
 
-        resources = recommend_resources(crowd_size, risk, event_cause)
-        scenarios = get_diversion_scenarios(risk, crowd_size, duration_median)
-        past_events = get_past_similar_events(event_cause, zone)
+        resources = recommend_resources(inp["crowd_size"], risk, inp["event_cause"])
+        scenarios = get_diversion_scenarios(risk, inp["crowd_size"], duration_median)
+        past_events = get_past_similar_events(inp["event_cause"], inp["zone"])
+        best = min(scenarios, key=scenarios.get)
+        savings = scenarios["No Diversion"] - scenarios[best]
+        timeline = build_response_timeline(inp["mode"], risk, best, inp["lead_time"])
+        command_brief = make_command_brief(
+            inp, risk_score, risk, duration_median, busy_until, best,
+            savings, resources, timeline, operational_reasons
+        )
+        command_mood = get_command_mood(risk, inp["mode"])
+        situation_chips = get_situation_chips(inp, risk)
 
     # ---- SECTION 1: Digital Twin Impact ----
     st.subheader("🎭 Digital Twin — Predicted Impact")
+
+    st.markdown(
+        f"""
+        <div style="border-left: 8px solid {command_mood['color']};
+                    background: #ffffff; padding: 18px 20px; border-radius: 8px;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 14px;">
+            <div style="display:flex; align-items:center; gap:16px;">
+                <div style="font-size:56px; line-height:1;">{command_mood['emoji']}</div>
+                <div>
+                    <div style="font-size:24px; font-weight:700; color:{command_mood['color']};">
+                        {command_mood['title']}
+                    </div>
+                    <div style="font-size:15px; color:#3f3f46;">{command_mood['caption']}</div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    chip_html = " ".join(
+        f"<span style='display:inline-block;background:#F3F4F6;border:1px solid #D1D5DB;"
+        f"border-radius:999px;padding:6px 10px;margin:0 6px 8px 0;font-size:14px;'>"
+        f"{icon} {label}</span>"
+        for icon, label in situation_chips
+    )
+    st.markdown(chip_html, unsafe_allow_html=True)
 
     col_score, col_level, col_time = st.columns(3)
     col_score.metric("⚡ Risk Score", f"{risk_score}/100")
     col_level.metric("🎯 Risk Level", risk)
     col_time.metric("⏱️ Area Busy Until", f"~{busy_until:02d}:00")
+
+    st.caption(
+        f"Model-only estimate: {model_risk} risk ({model_risk_score}/100). "
+        "Operational context is applied on top for command decisions."
+    )
 
     if risk == "Minor":
         st.success(f"✅ **{risk} Risk ({risk_score}/100)** — Manageable with standard deployment")
@@ -380,6 +661,11 @@ if predict_btn and "inputs" in st.session_state:
     }
     for action in actions[risk]:
         st.write(action)
+
+    if operational_reasons:
+        st.markdown("**Operational risk drivers:**")
+        for reason in operational_reasons:
+            st.write(f"- {reason}")
 
     # Duration prediction
     st.divider()
@@ -436,11 +722,25 @@ if predict_btn and "inputs" in st.session_state:
 
     st.divider()
 
-    # ---- SECTION 4: Map ----
+    # ---- SECTION 4: Command Brief ----
+    st.subheader("Command Brief & Response Timeline")
+    for step in timeline:
+        st.write(f"- {step}")
+    st.download_button(
+        "Download Command Brief",
+        data=command_brief,
+        file_name="gridlock_command_brief.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
+
+    st.divider()
+
+    # ---- SECTION 5: Map ----
     st.subheader("🗺️ Affected Area & Diversion Routes")
     st.caption("Red = affected zone | Green = Route B diversion | Purple = Early closure route")
 
-    event_map = build_map(zone, risk, duration_median, hour)
+    event_map = build_map(inp["zone"], risk, duration_median, inp["hour"])
     st_folium(event_map, use_container_width=True, height=500)
 
 else:
