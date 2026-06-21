@@ -308,7 +308,7 @@ def optimize_police_dispatch(required_officers, required_cars, incident_zone, G)
     and allocate resources up to the required levels.
     """
     if incident_zone not in G.nodes:
-        return []
+        return [], required_officers, required_cars
         
     dispatch_results = []
     remaining_officers = required_officers

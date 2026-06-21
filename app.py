@@ -10,6 +10,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 import traffic_network as tn
+import folium
+from streamlit_folium import st_folium
+
 
 def make_line_sparkline(data_points, bg_color):
     fig = go.Figure(go.Scatter(
@@ -341,6 +344,7 @@ st.markdown("""
 # -------------------------------------------------------
 # GEOCODING — NEW: converts address text to lat/lng
 # -------------------------------------------------------
+@st.cache_data(show_spinner=False)
 def geocode_location(address_text):
     """Uses OpenStreetMap Nominatim — free, no key needed."""
     try:
@@ -428,223 +432,117 @@ def get_nearby_facilities(lat, lng, keyword, radius=3000, limit=2):
     except Exception:
         return []
 
-# -------------------------------------------------------
-# MAPPLS MAP — NEW: replaces Folium map
-# -------------------------------------------------------
-def build_mappls_map(lat, lng, risk_level, risk_score, location_name, routing, corridor, dispatch):
+def build_folium_map(lat, lng, risk_level, risk_score, incident_node, target_hospital, routing_res, corridor_res, dispatch_res):
     radius_meters = {
         "Minor": 400, "Moderate": 750, "Severe": 1200
     }.get(risk_level, 500)
 
     risk_color = {"Minor": "#2e7d32", "Moderate": "#e65100", "Severe": "#c62828"}.get(risk_level, "#c62828")
-    route_b_color = "#00b386"
-    early_closure_color = "#7c3aed"
 
-    dest1_lat = round(lat + 0.012, 6)
-    dest1_lng = round(lng + 0.015, 6)
-    dest2_lat = round(lat - 0.010, 6)
-    dest2_lng = round(lng - 0.012, 6)
+    # Create base map with CartoDB dark_matter tiles
+    m = folium.Map(location=[lat, lng], zoom_start=13, tiles="CartoDB dark_matter")
 
-    # Fetch nearby facilities
-    police = get_nearby_facilities(lat, lng, "police station", limit=2)
-    hospitals = get_nearby_facilities(lat, lng, "hospital", limit=2)
+    # Add Affected Zone Circle
+    folium.Circle(
+        location=[lat, lng],
+        radius=radius_meters,
+        color=risk_color,
+        fill=True,
+        fill_color=risk_color,
+        fill_opacity=0.25,
+        tooltip=f"Incident Buffer Zone ({risk_level} Risk)",
+        popup=f"Risk Score: {risk_score}/100"
+    ).add_to(m)
 
-    facility_markers_js = ""
-    for p in police:
-        facility_markers_js += f"""
-        mappls.Marker({{
-            map: map,
-            position: {{ lat: {p['lat']}, lng: {p['lng']} }},
-            popupHtml: '<b>Police Station</b><br>{p["name"]}<br>{p.get("address","")}',
-            fitbounds: false
-        }});"""
-    for h in hospitals:
-        facility_markers_js += f"""
-        mappls.Marker({{
-            map: map,
-            position: {{ lat: {h['lat']}, lng: {h['lng']} }},
-            popupHtml: '<b>Hospital</b><br>{h["name"]}<br>{h.get("address","")}',
-            fitbounds: false
-        }});"""
+    # Add Event Location Marker
+    folium.Marker(
+        location=[lat, lng],
+        tooltip="📍 Event/Incident Origin",
+        icon=folium.Icon(color="red" if risk_level == "Severe" else "orange" if risk_level == "Moderate" else "green", icon="exclamation-sign")
+    ).add_to(m)
 
-    html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8"/>
-    <style>
-        body {{ margin: 0; padding: 0; }}
-        #map {{ width: 100%; height: 520px; }}
-        .legend {{
-            position: absolute; bottom: 30px; left: 10px;
-            background: white; padding: 12px 16px; border-radius: 8px;
-            border: 1px solid #ccc; font-size: 12px; font-family: Arial;
-            z-index: 999; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }}
-        .legend-item {{ display:flex; align-items:center; margin: 5px 0; }}
-        .dot {{ width:14px; height:14px; border-radius:50%; margin-right:8px; flex-shrink:0; }}
-        #map-error {{
-            display:none; padding: 14px; font-family: Arial, sans-serif; font-size: 13px;
-            color:#c62828; background:#fff3f3; border:1px solid #ffcdd2; border-radius:8px; margin:10px;
-        }}
-    </style>
-</head>
-<body>
-<div id="map-error"></div>
-<div id="map"></div>
-<div class="legend">
-    <b>Map Legend</b><br>
-    <div class="legend-item"><div class="dot" style="background:{risk_color}"></div> Affected Zone</div>
-    <div class="legend-item"><div class="dot" style="background:{route_b_color}"></div> Diversion Route A</div>
-    <div class="legend-item"><div class="dot" style="background:{early_closure_color}"></div> Diversion Route B</div>
-    <div class="legend-item"><div class="dot" style="background:#0d47a1"></div> Event Location</div>
-    <div class="legend-item"><div class="dot" style="background:#555"></div> Police / Hospital</div>
-</div>
+    # Draw all graph nodes
+    for name, coords in tn.NODE_COORDS.items():
+        if name == incident_node:
+            continue
+        folium.CircleMarker(
+            location=coords,
+            radius=5,
+            color="#a5a6b4",
+            fill=True,
+            fill_color="#1d2030",
+            fill_opacity=0.8,
+            popup=name,
+            tooltip=name
+        ).add_to(m)
 
-<script>
-var mapErrors = [];
+    # Draw all graph road edges
+    for u, v in tn.ROAD_EDGES:
+        u_coords = tn.NODE_COORDS[u]
+        v_coords = tn.NODE_COORDS[v]
+        folium.Polyline(
+            locations=[u_coords, v_coords],
+            color="#2f3149",
+            weight=1.5,
+            opacity=0.6,
+            tooltip=f"Road: {u} - {v}"
+        ).add_to(m)
 
-function showMapError(msg) {{
-    mapErrors.push(msg);
-    var el = document.getElementById('map-error');
-    el.style.display = 'block';
-    el.innerHTML = '<b>Map issues:</b><br>' + mapErrors.map(function(m) {{ return '• ' + m; }}).join('<br>');
-}}
+    # Draw Commuter Path Comparison (Standard vs diversion)
+    if routing_res:
+        std_coords = [tn.NODE_COORDS[node] for node in routing_res["std_path"]]
+        folium.Polyline(
+            locations=std_coords,
+            color="#e55353",
+            weight=3.5,
+            dash_array="6, 6",
+            opacity=0.8,
+            tooltip="Standard Path (Gridlocked)"
+        ).add_to(m)
 
-function initMap() {{
-    if (window.__gridlockMapInitialized) return;
-    window.__gridlockMapInitialized = true;
+        congested_coords = [tn.NODE_COORDS[node] for node in routing_res["congested_path"]]
+        folium.Polyline(
+            locations=congested_coords,
+            color="#2ecc71",
+            weight=4.5,
+            opacity=0.9,
+            tooltip="Diversion Route (Bypass)"
+        ).add_to(m)
 
-    if (typeof mappls === 'undefined') {{
-        showMapError('Mappls SDK script did not load (check MAPPLS_API_KEY / network / domain restrictions on the key).');
-        return;
-    }}
+    # Draw Emergency Green Corridor Path
+    if corridor_res:
+        corridor_coords = corridor_res["coords_path"]
+        folium.Polyline(
+            locations=corridor_coords,
+            color="#3399ff",
+            weight=5.0,
+            opacity=0.95,
+            tooltip="Emergency Green Corridor"
+        ).add_to(m)
 
-    var map;
-    try {{
-        map = new mappls.Map('map', {{
-            center: [{lat}, {lng}],
-            zoom: 14,
-            search: false
-        }});
-    }} catch (err) {{
-        showMapError('Map init failed: ' + err.message);
-        return;
-    }}
+        hosp_coords = tn.HOSPITAL_COORDS.get(target_hospital)
+        if hosp_coords:
+            folium.Marker(
+                location=hosp_coords,
+                tooltip=f"🏥 Hospital Destination: {target_hospital}",
+                popup=f"ETA: {corridor_res['eta_mins']} mins",
+                icon=folium.Icon(color="blue", icon="plus-sign")
+            ).add_to(m)
 
-    function drawAllLayers() {{
-        try {{
-            mappls.Marker({{
-                map: map,
-                position: {{ lat: {lat}, lng: {lng} }},
-                popupHtml: '<b>📍 {location_name}</b><br>Risk: {risk_level}<br>Score: {risk_score}/100',
-                fitbounds: false
-            }});
-        }} catch (err) {{
-            showMapError('Event marker failed: ' + err.message);
-        }}
+    # Draw Dispatched Police Stations
+    if dispatch_res:
+        for d in dispatch_res:
+            station_name = d["station"]
+            if d["officers_dispatched"] > 0 or d["cars_dispatched"] > 0:
+                stat_coords = tn.POLICE_STATIONS[station_name]["coords"]
+                folium.Marker(
+                    location=stat_coords,
+                    tooltip=f"👮 Dispatched Depot: {station_name}",
+                    popup=f"Officers: {d['officers_dispatched']}, Cars: {d['cars_dispatched']}",
+                    icon=folium.Icon(color="darkblue", icon="info-sign")
+                ).add_to(m)
 
-        try {{
-            mappls.Circle({{
-                map: map,
-                center: {{ lat: {lat}, lng: {lng} }},
-                radius: {radius_meters},
-                strokeColor: '{risk_color}',
-                strokeOpacity: 1,
-                strokeWeight: 3,
-                fillColor: '{risk_color}',
-                fillOpacity: 0.25
-            }});
-        }} catch (err) {{
-            showMapError('Risk circle failed: ' + err.message);
-        }}
-
-        // NOTE: using simple Polylines instead of the directions/routing
-        // plugin here. Routing requires additional API scopes/billing that
-        // aren't reliably documented, and previously failed outright
-        // (mappls.direction is not a function on this SDK build). A straight
-        // line still communicates the diversion direction clearly and is
-        // guaranteed to render with just the base Marker/Circle plugins.
-        try {{
-            mappls.Polyline({{
-                map: map,
-                path: [
-                    {{ lat: {lat}, lng: {lng} }},
-                    {{ lat: {dest1_lat}, lng: {dest1_lng} }}
-                ],
-                strokeColor: '{route_b_color}',
-                strokeOpacity: 1,
-                strokeWeight: 4
-            }});
-        }} catch (err) {{
-            showMapError('Diversion route A failed: ' + err.message);
-        }}
-
-        try {{
-            mappls.Polyline({{
-                map: map,
-                path: [
-                    {{ lat: {lat}, lng: {lng} }},
-                    {{ lat: {dest2_lat}, lng: {dest2_lng} }}
-                ],
-                strokeColor: '{early_closure_color}',
-                strokeOpacity: 1,
-                strokeWeight: 4
-            }});
-        }} catch (err) {{
-            showMapError('Diversion route B failed: ' + err.message);
-        }}
-
-        try {{
-            {facility_markers_js}
-        }} catch (err) {{
-            showMapError('Facility markers failed: ' + err.message);
-        }}
-    }}
-
-    // Some Mappls SDK versions fire 'load' reliably, others don't fire it
-    // at all for programmatically-created maps. Try the event, but also
-    // fall back to a short delay so layers draw either way.
-    var layersDrawn = false;
-    function drawOnce() {{
-        if (layersDrawn) return;
-        layersDrawn = true;
-        drawAllLayers();
-    }}
-
-    try {{
-        map.on('load', drawOnce);
-    }} catch (err) {{
-        showMapError('Could not attach load listener: ' + err.message);
-    }}
-
-    // Fallback: draw layers after 1.5s regardless, in case 'load' never fires.
-    setTimeout(drawOnce, 1500);
-}}
-
-// Fallback in case the SDK callback param itself doesn't fire (older SDK
-// versions sometimes ignore it). If the map div is still empty after 6s,
-// try calling initMap manually.
-setTimeout(function() {{
-    var mapDiv = document.getElementById('map');
-    if (mapDiv && mapDiv.children.length === 0) {{
-        if (typeof mappls !== 'undefined') {{
-            initMap();
-        }} else {{
-            showMapError('Timed out waiting for the Mappls SDK to load. Verify MAPPLS_API_KEY is set and valid.');
-        }}
-    }}
-}}, 6000);
-</script>
-
-<script
-    src="https://apis.mappls.com/advancedmaps/api/{MAPPLS_KEY}/map_sdk?v=3.0&layer=vector&callback=initMap"
-    onerror="showMapError('Could not load the Mappls SDK script tag — check API key validity / network access.')">
-</script>
-</body>
-</html>
-"""
-    return html
+    return m
 
 # -------------------------------------------------------
 # CORE FUNCTIONS (unchanged from teammate's version)
@@ -863,6 +761,7 @@ def make_command_brief(inputs, risk_score, risk_level, duration_min, busy_until,
     resource_lines = "\n".join(f"- {name}: {count}" for name, count in resources.items())
     timeline_lines = "\n".join(f"- {item}" for item in timeline)
     reason_lines = "\n".join(f"- {item}" for item in operational_reasons) or "- No extra operational risk factors"
+    busy_until_str = f"{int(busy_until):02d}"
     return f"""# Gridlock Command Brief
 
 ## Scenario
@@ -880,7 +779,7 @@ def make_command_brief(inputs, risk_score, risk_level, duration_min, busy_until,
 - Operational risk score: {risk_score}/100
 - Risk level: {risk_level}
 - Typical disruption duration: {duration_min} minutes
-- Area busy until: ~{busy_until:02d}:00
+- Area busy until: ~{busy_until_str}:00
 - Best diversion strategy: {best_strategy}
 - Delay saved versus no action: ~{savings} minutes
 
@@ -969,7 +868,7 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-    preset_name = st.selectbox("Demo Scenario Preset", ["Custom"] + list(PRESETS.keys()), help="Use a ready-made situation for fast judging demos")
+    preset_name = st.selectbox("Demo Scenario Preset", ["Custom"] + list(PRESETS.keys()), index=1, help="Use a ready-made situation for fast judging demos")
     preset = PRESETS.get(preset_name, {})
 
     mode = st.radio("Command Mode", ["Planned Event", "Unplanned Incident"],
@@ -979,10 +878,10 @@ with st.sidebar:
     event_cause = st.selectbox("Event Type", EVENT_CAUSES,
                                index=EVENT_CAUSES.index(preset.get("event_cause", "public_event")))
 
-    # NEW: Location as text input instead of zone dropdown
+    # Location input defaults to preset value
     location_input = st.text_input(
         "Event Location",
-        value=preset.get("location", ""),
+        value=preset.get("location", "Kanteerava Stadium, Bengaluru"),
         placeholder="e.g. Lalbagh Botanical Garden, MG Road...",
         help="Type any Bengaluru landmark or address"
     )
@@ -994,7 +893,6 @@ with st.sidebar:
         help="For incidents, use estimated affected road users or queue impact"
     )
 
-    # NEW: Hour + Minute dropdowns instead of slider
     st.markdown("**Event Start Time**")
     t_col1, t_col2 = st.columns(2)
     with t_col1:
@@ -1025,8 +923,23 @@ with st.sidebar:
         """,
         unsafe_allow_html=True
     )
-    zone_coord = tn.NODE_COORDS.get("Central Zone 1", (12.9716, 77.5946))
-    closest_hospital = min(tn.HOSPITAL_COORDS.keys(), key=lambda h: tn.haversine_distance(zone_coord, tn.HOSPITAL_COORDS[h]))
+
+    # 1. Geocode current location input (cached)
+    geo_lat, geo_lng = 12.9716, 77.5946
+    formatted_address = f"{location_input} (Fallback Coordinates)"
+    current_zone = "Central Zone 1"
+    geo_result = None
+
+    if location_input.strip():
+        geo_result = geocode_location(location_input.strip())
+        if geo_result:
+            geo_lat, geo_lng, formatted_address = geo_result
+            current_zone = lat_lng_to_zone(geo_lat, geo_lng)
+        else:
+            st.sidebar.warning(f"Could not locate '{location_input}'. Using default coordinates.")
+
+    # 2. Dynamic closest hospital recommendation
+    closest_hospital = min(tn.HOSPITAL_COORDS.keys(), key=lambda h: tn.haversine_distance((geo_lat, geo_lng), tn.HOSPITAL_COORDS[h]))
     hosp_options = list(tn.HOSPITAL_COORDS.keys())
     target_hospital = st.selectbox("Emergency Hospital Destination", options=hosp_options,
                                    index=hosp_options.index(closest_hospital),
@@ -1034,49 +947,32 @@ with st.sidebar:
 
     st.markdown("---")
 
-    if st.button("Simulate Mitigation Strategy", use_container_width=True, type="primary"):
-        if not location_input.strip():
-            st.error("Please enter an event location.")
-        else:
-            with st.spinner("Locating address..."):
-                geo_result = geocode_location(location_input.strip())
+    # Keep a refresh button that clears cache
+    if st.button("Force Geocode Refresh", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-            if geo_result is None:
-                st.error(f"Could not find '{location_input}'. Please check spelling or try a nearby landmark.")
-            else:
-                geo_lat, geo_lng, formatted_address = geo_result
-                zone = lat_lng_to_zone(geo_lat, geo_lng)
-                hour_decimal = hour + int(minute_str) / 60
-
-                # Update closest hospital based on actual location
-                zone_coord = (geo_lat, geo_lng)
-                closest_hospital = min(tn.HOSPITAL_COORDS.keys(), key=lambda h: tn.haversine_distance(zone_coord, tn.HOSPITAL_COORDS[h]))
-
-                st.session_state["submitted"] = True
-                st.session_state["inputs"] = {
-                    "mode": mode,
-                    "event_cause": event_cause,
-                    "location_input": location_input,
-                    "formatted_address": formatted_address,
-                    "lat": geo_lat,
-                    "lng": geo_lng,
-                    "zone": zone,
-                    "crowd_size": crowd_size,
-                    "hour": hour_decimal,
-                    "hour_display": f"{hour:02d}:{minute_str}",
-                    "day": day,
-                    "lead_time": lead_time,
-                    "lanes_blocked": lanes_blocked,
-                    "rain_watch": rain_watch,
-                    "target_hospital": target_hospital,
-                }
+    hour_decimal = hour + int(minute_str) / 60
+    inp = {
+        "mode": mode,
+        "event_cause": event_cause,
+        "location_input": location_input,
+        "formatted_address": formatted_address,
+        "lat": geo_lat,
+        "lng": geo_lng,
+        "zone": current_zone,
+        "crowd_size": crowd_size,
+        "hour": hour_decimal,
+        "hour_display": f"{hour:02d}:{minute_str}",
+        "day": day,
+        "lead_time": lead_time,
+        "lanes_blocked": lanes_blocked,
+        "rain_watch": rain_watch,
+        "target_hospital": target_hospital,
+    }
 
 # MAIN CONTENT
-predict_btn = st.session_state.get("submitted", False)
-
-if predict_btn and "inputs" in st.session_state:
-    inp = st.session_state["inputs"]
-
+if True:
     with st.spinner("Running system simulation models..."):
         risk_result = predict_event_risk(inp["event_cause"], inp["crowd_size"], inp["zone"], inp["hour"], inp["day"])
         model_risk = risk_result["risk_level"]
@@ -1224,7 +1120,7 @@ if predict_btn and "inputs" in st.session_state:
                 "Severe": ["Execute complete road closure around target zone 2 hours prior to event.", "Position emergency fire brigade and ambulance services at nearby nodes.", "Initiate detour/diversion routing across the local network.", "Broadcast alert advisory updates to local travel applications.", "Activate Green Corridor protocols for medical response."]
             }
             for act in actions[risk]:
-                st.markdown(f'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/flat-round/24/checkmark.png" width="16" height="16" style="margin-top:3px;"/><span style="font-size:15px;color:#212529;">{act}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/flat-round/24/checkmark.png" width="16" height="16" style="margin-top:3px;"/><span style="font-size:15px;color:#f8f9fa;">{act}</span></div>', unsafe_allow_html=True)
             if operational_reasons:
                 st.markdown("<br>**Operational adjustment factors:**", unsafe_allow_html=True)
                 for reason in operational_reasons:
@@ -1288,7 +1184,7 @@ if predict_btn and "inputs" in st.session_state:
         if corridor_res:
             c_left, c_right = st.columns([1, 1.5])
             with c_left:
-                st.markdown(f'<div style="background-color:#ffffff;border:1px solid #E4E7EC;border-left:3px solid #3B5BFF;padding:18px 20px;border-radius:10px;margin-bottom:15px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/color/48/ambulance.png" width="22" height="22"/><b style="color:#0B1320;font-family:Archivo,Inter,sans-serif;font-size:15px;">Medical Transit Corridor Active</b></div><span style="color:#8B95A5;font-size:13px;">Route</span> <b>{inp["zone"]}</b> → <b>{inp["target_hospital"]}</b><br><span style="color:#8B95A5;font-size:13px;">Total Corridor Distance</span> <b>{corridor_res["distance_km"]:.2f} km</b><br><span style="color:#8B95A5;font-size:13px;">ETA (Emergency Speed)</span> <b>{corridor_res["eta_mins"]} mins</b></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="background-color:#222437;border:1px solid #2f3149;border-left:3px solid #3B5BFF;padding:18px 20px;border-radius:10px;margin-bottom:15px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/color/48/ambulance.png" width="22" height="22"/><b style="color:#ffffff;font-family:Archivo,Inter,sans-serif;font-size:15px;">Medical Transit Corridor Active</b></div><span style="color:#a5a6b4;font-size:13px;">Route:</span> <b style="color:#ffffff;">{inp["zone"]}</b> → <b style="color:#ffffff;">{inp["target_hospital"]}</b><br><span style="color:#a5a6b4;font-size:13px;">Total Corridor Distance:</span> <b style="color:#ffffff;">{corridor_res["distance_km"]:.2f} km</b><br><span style="color:#a5a6b4;font-size:13px;">ETA (Emergency Speed):</span> <b style="color:#ffffff;">{corridor_res["eta_mins"]} mins</b></div>', unsafe_allow_html=True)
                 st.markdown("**Signal Override Instructions:**")
                 st.write("1. Broadcast preemptive signals to all roadside police controllers.")
                 st.write("2. Force green state on signal controllers at intersections matching the schedule.")
@@ -1327,7 +1223,7 @@ if predict_btn and "inputs" in st.session_state:
         st.caption("Detects delays and computes detours for public bus commuters intersecting the incident zone.")
         if transit_res:
             for route in transit_res:
-                st.markdown(f'<div style="background-color:#ffffff;border:1px solid #E4E7EC;border-left:3px solid #C2740C;padding:18px 20px;border-radius:10px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/color/48/bus.png" width="20" height="20"/><b style="color:#0B1320;font-family:Archivo,Inter,sans-serif;font-size:14px;">{route["name"]}</b><span style="background-color:#FBEAE8;color:#C8372E;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;margin-left:10px;">{route["status"]}</span></div><span style="color:#8B95A5;font-size:13px;">Standard Path</span> <span style="font-size:13px;color:#1F2937;">{route["standard_stops"]}</span><br><span style="color:#8B95A5;font-size:13px;">Diverted Path</span> <span style="font-size:13px;color:#1F2937;font-weight:500;">{route["diverted_stops"]}</span><br><span style="color:#8B95A5;font-size:13px;">Estimated Delay</span> <b>+{route["estimated_delay_mins"]} minutes</b><br><b style="color:#C2740C;">Commuter advisory —</b> {route["shifted_stop_advise"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="background-color:#222437;border:1px solid #2f3149;border-left:3px solid #C2740C;padding:18px 20px;border-radius:10px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/color/48/bus.png" width="20" height="20"/><b style="color:#ffffff;font-family:Archivo,Inter,sans-serif;font-size:14px;">{route["name"]}</b><span style="background-color:#e55353;color:#ffffff;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;margin-left:10px;">{route["status"]}</span></div><span style="color:#a5a6b4;font-size:13px;">Standard Path:</span> <span style="font-size:13px;color:#f8f9fa;">{route["standard_stops"]}</span><br><span style="color:#a5a6b4;font-size:13px;">Diverted Path:</span> <span style="font-size:13px;color:#f8f9fa;font-weight:500;">{route["diverted_stops"]}</span><br><span style="color:#a5a6b4;font-size:13px;">Estimated Delay:</span> <b style="color:#ffffff;">+{route["estimated_delay_mins"]} minutes</b><br><b style="color:#f9b115;">Commuter advisory —</b> <span style="color:#f8f9fa;">{route["shifted_stop_advise"]}</span></div>', unsafe_allow_html=True)
         else:
             st.success("No active BMTC transit routes are disrupted by this incident.")
 
@@ -1342,18 +1238,5 @@ if predict_btn and "inputs" in st.session_state:
     st.markdown('<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><img src="https://img.icons8.com/color/48/map.png" width="24" height="24"/><b style="font-size:16px;">Live Affected Network & Diversion Routes</b></div>', unsafe_allow_html=True)
     st.caption(f"📍 {inp['formatted_address']} | Affected radius, real road diversion routes, nearby police & hospitals")
 
-    map_html = build_mappls_map(inp["lat"], inp["lng"], risk, risk_score, inp["location_input"], routing_res, corridor_res, dispatch_res)
-    components.html(map_html, height=520)
-
-else:
-    st.info("Fill in the event details in the left-hand sidebar control panel and click 'Simulate Mitigation Strategy' to run calculations.")
-    st.markdown("""
-    ### System Capabilities
-    This system runs real-time spatial calculations across Bengaluru's road graph.
-    - **Digital Twin Risk Profile**: Categorizes incident impacts based on temporal and categorical ML models.
-    - **Dynamic Diversion Simulator**: Calculates shortest paths using NetworkX Dijkstra routing based on congestion weights.
-    - **Green Corridor Planner**: Calculates preemptive paths to major hospitals and computes intersection ETAs.
-    - **Police Dispatch Optimizer**: Dispatches emergency personnel from stations by optimizing travel distances and station capacities.
-    - **BMTC Transit Advisor**: Reroutes public transport lines and alerts commuters of bus stops to bypass.
-    - **Live Mappls Map**: Shows exact event location, affected zone radius, real road diversion routes, and nearby police/hospitals.
-    """)
+    folium_map = build_folium_map(inp["lat"], inp["lng"], risk, risk_score, inp["zone"], inp["target_hospital"], routing_res, corridor_res, dispatch_res)
+    st_folium(folium_map, height=520, use_container_width=True, returned_objects=[])
