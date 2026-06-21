@@ -1,6 +1,10 @@
 # Gridlock Hackathon 2.0 - Traffic Demand Prediction
 
-Team: **APIcalypse Now**
+<img width="959" height="410" alt="image" src="https://github.com/user-attachments/assets/c00d438c-c82e-479e-a4bf-320f6334fe78" />
+<br>
+<br>
+
+### Team: **APIcalypse Now**
 
 ## Project Overview
 
@@ -29,9 +33,13 @@ streamlit run app.py
 
 See `docs/Phase2_Command_Center_Strategy.md` for the demo script and pitch positioning.
 
-## Prototype Submission & Judging Criteria Mapping
+## Prototype Submission
 
 The **Gridlock Sentinel Command Center** prototype has been engineered to directly address the hackathon's core judging criteria:
+
+| Dijkstra algorithm | SHAP TreeExplainer | BMTC Commute transport map |
+|--------------------|--------------------|----------------------------|
+| <img width="868" height="801" alt="image" src="https://github.com/user-attachments/assets/be835435-4c81-43a8-9f1b-896e97731d23" /> | <img width="1212" height="377" alt="image" src="https://github.com/user-attachments/assets/7be97281-e0f7-4a8b-bef2-6cc6ae4652bb" /> | <img width="900" height="858" alt="image" src="https://github.com/user-attachments/assets/b7ca1369-3734-4f9e-9427-e290d4f6c3b2" /> |
 
 ### 1. Technical Rigor (Algorithm & Modeling Depth)
 * **GBDT Predictive Risk Engine**: Combines the offline machine learning model (trained on historical Bengaluru event records) with real-time operational risk adjustments (blocked lanes, rain watch, peak hour, preparation lead time) to predict situational severity.
@@ -42,7 +50,7 @@ The **Gridlock Sentinel Command Center** prototype has been engineered to direct
 
 ### 2. Visual Quality & User Experience (CoreUI Aesthetics)
 * **CoreUI Flat Dark Skin**: Built using a premium flat dark palette (App background: `#181924`, Cards: `#222437`, Sidebar: `#1d2030`) utilizing modern typography (Inter, IBM Plex Mono) and consistent components.
-* **Zero-Emoji Professional Standard**: Completely replaced all emojis with high-quality Icons8 SVG/PNG markers and icons to deliver an enterprise-grade visual experience.
+* **Professional Standard**:  Used high-quality Icons8 SVG/PNG markers and icons to deliver an enterprise-grade visual experience.
 * **Dynamic, Responsive Reruns**: Removed all button-click gating. The dashboard, metrics, Plotly sparkline charts, and interactive map update in real-time instantly as the operator changes sidebar sliders.
 * **Dynamic Hospital Recommendation**: Automatically computes the closest medical facility based on geocoded input location and sets it as the default, simplifying operator workflows.
 
@@ -92,6 +100,44 @@ gridlock-hackathon-apicalypse-now/
 ├── requirements.txt
 └── README.md
 ```
+
+
+## Mermaid diagram
+
+```mermaid
+flowchart TD
+    A["Operator Input\n(Event Type, Venue, Crowd Size,\nLanes Blocked, Hour, Weather)"]
+    A --> B["Geocoding Engine\n(Location → lat/lng)"]
+    B --> C["GBDT Risk Engine\n(scikit-learn + SHAP)\n→ Risk Score 0–100"]
+
+    C --> D["SHAP Explainability Panel\n(Feature Contribution Breakdown)"]
+    C --> E["Dijkstra Routing Engine\n(NetworkX Road Graph)\n20 Nodes · 25 Arterial Edges"]
+    C --> F["Emergency Green Corridor\n(Hospital Snap + Signal\nPreemption Schedule)"]
+    C --> G["Police Proximity Allocator\n(Capacity-Constrained\nResource Dispatch)"]
+    C --> H["BMTC Transit Advisor\n(Detour Delay + Shifted\nBoarding Stops)"]
+
+    E --> I["24-Hr Traffic Forecast\n(Plotly Chart + Event Impact Overlay)"]
+    E --> J["Diversion Route\n(Optimal Bypass + Delay Savings)"]
+
+    D & I & J & F & G & H --> K["Unified Command Dashboard\n(CoreUI Dark Theme · Folium/Mappls Map)"]
+
+    K --> L["Download Command Brief\n(Markdown Report for Field Teams)"]
+
+    style A fill:#5856d6,color:#fff,stroke:#5856d6
+    style B fill:#1d2030,color:#a5a6b4,stroke:#2f3149
+    style C fill:#3399ff,color:#fff,stroke:#3399ff
+    style D fill:#222437,color:#f9b115,stroke:#2f3149
+    style E fill:#222437,color:#3399ff,stroke:#2f3149
+    style F fill:#222437,color:#2ecc71,stroke:#2f3149
+    style G fill:#222437,color:#e55353,stroke:#2f3149
+    style H fill:#222437,color:#f9b115,stroke:#2f3149
+    style I fill:#1d2030,color:#a5a6b4,stroke:#2f3149
+    style J fill:#1d2030,color:#a5a6b4,stroke:#2f3149
+    style K fill:#181924,color:#fff,stroke:#3399ff
+    style L fill:#2ecc71,color:#fff,stroke:#2ecc71
+```
+
+<br> 
 
 ## Setup Instructions
 
