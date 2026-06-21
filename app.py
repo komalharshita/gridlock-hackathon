@@ -136,7 +136,8 @@ def make_traffic_chart(df_data, hour_filter, risk_score):
     return fig
 
 load_dotenv()
-MAPPLS_KEY = os.getenv("MAPPLS_API_KEY")
+MAPPLS_KEY = st.secrets.get("MAPPLS_API_KEY") or os.getenv("MAPPLS_API_KEY")
+
 
 # Configure Page
 st.set_page_config(
@@ -429,6 +430,245 @@ def get_nearby_facilities(lat, lng, keyword, radius=3000, limit=2):
         return facilities
     except Exception:
         return []
+
+def build_mappls_map(lat, lng, risk_level, risk_score, incident_node, target_hospital, routing_res, corridor_res, dispatch_res):
+    radius_meters = {
+        "Minor": 400, "Moderate": 750, "Severe": 1200
+    }.get(risk_level, 500)
+
+    risk_color = {"Minor": "#2e7d32", "Moderate": "#e65100", "Severe": "#c62828"}.get(risk_level, "#c62828")
+
+    # Format routes as JavaScript coordinate arrays
+    std_coords_js = "[]"
+    has_routing_js = "false"
+    congested_coords_js = "[]"
+    if routing_res:
+        has_routing_js = "true"
+        std_coords_js = "[" + ", ".join(f"{{ lat: {tn.NODE_COORDS[node][0]}, lng: {tn.NODE_COORDS[node][1]} }}" for node in routing_res["std_path"]) + "]"
+        congested_coords_js = "[" + ", ".join(f"{{ lat: {tn.NODE_COORDS[node][0]}, lng: {tn.NODE_COORDS[node][1]} }}" for node in routing_res["congested_path"]) + "]"
+
+    corridor_coords_js = "[]"
+    has_corridor_js = "false"
+    hosp_lat, hosp_lng = 0.0, 0.0
+    corridor_eta = 0.0
+    if corridor_res:
+        has_corridor_js = "true"
+        corridor_coords_js = "[" + ", ".join(f"{{ lat: {coord[0]}, lng: {coord[1]} }}" for coord in corridor_res["coords_path"]) + "]"
+        hosp_coords = tn.HOSPITAL_COORDS.get(target_hospital)
+        if hosp_coords:
+            hosp_lat, hosp_lng = hosp_coords
+        corridor_eta = corridor_res["eta_mins"]
+
+    # Format police markers
+    police_markers_js = ""
+    if dispatch_res:
+        for d in dispatch_res:
+            station_name = d["station"]
+            if d["officers_dispatched"] > 0 or d["cars_dispatched"] > 0:
+                stat_coords = tn.POLICE_STATIONS[station_name]["coords"]
+                police_markers_js += f"""
+                new mappls.Marker({{
+                    map: map,
+                    position: {{ lat: {stat_coords[0]}, lng: {stat_coords[1]} }},
+                    popupHtml: '<b>\U0001f46e Dispatched Depot</b><br>{station_name}<br>Officers: {d["officers_dispatched"]}, Cars: {d["cars_dispatched"]}',
+                    icon: 'https://img.icons8.com/color/48/police-badge.png',
+                    width: 32,
+                    height: 32
+                }});"""
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <style>
+        body {{ margin: 0; padding: 0; }}
+        #map {{ width: 100%; height: 520px; }}
+        .legend {{
+            position: absolute; bottom: 30px; left: 10px;
+            background: #222437; padding: 12px 16px; border-radius: 8px;
+            border: 1px solid #2f3149; font-size: 12px; font-family: Arial;
+            z-index: 999; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            color: #ffffff;
+        }}
+        .legend-item {{ display:flex; align-items:center; margin: 5px 0; }}
+        .dot {{ width:14px; height:14px; border-radius:50%; margin-right:8px; flex-shrink:0; }}
+        #map-error {{
+            display:none; padding: 14px; font-family: Arial, sans-serif; font-size: 13px;
+            color:#c62828; background:#fff3f3; border:1px solid #ffcdd2; border-radius:8px; margin:10px;
+        }}
+    </style>
+</head>
+<body>
+<div id="map-error"></div>
+<div id="map"></div>
+<div class="legend">
+    <b>Map Legend</b><br>
+    <div class="legend-item"><div class="dot" style="background:{risk_color}"></div> Affected Zone ({risk_level})</div>
+    <div class="legend-item"><div class="dot" style="border: 2px dashed #e55353; background: transparent; width: 10px; height: 10px;"></div> Standard Route (Stuck)</div>
+    <div class="legend-item"><div class="dot" style="background:#2ecc71"></div> Diversion Bypass Route</div>
+    <div class="legend-item"><div class="dot" style="background:#3399ff"></div> Emergency Green Corridor</div>
+</div>
+
+<script>
+var mapErrors = [];
+
+function showMapError(msg) {{
+    mapErrors.push(msg);
+    var el = document.getElementById('map-error');
+    el.style.display = 'block';
+    el.innerHTML = '<b>Map issues:</b><br>' + mapErrors.map(function(m) {{ return '• ' + m; }}).join('<br>');
+}}
+
+function initMap() {{
+    if (window.__gridlockMapInitialized) return;
+    window.__gridlockMapInitialized = true;
+
+    if (typeof mappls === 'undefined') {{
+        showMapError('Mappls SDK script did not load (check MAPPLS_API_KEY / network / domain restrictions).');
+        return;
+    }}
+
+    var map;
+    try {{
+        map = new mappls.Map('map', {{
+            center: {{ lat: {lat}, lng: {lng} }},
+            zoom: 13,
+            search: false
+        }});
+    }} catch (err) {{
+        showMapError('Map init failed: ' + err.message);
+        return;
+    }}
+
+    function drawAllLayers() {{
+        // Event Origin Marker
+        try {{
+            new mappls.Marker({{
+                map: map,
+                position: {{ lat: {lat}, lng: {lng} }},
+                popupHtml: '<b>\U0001f4cd Event Origin ({incident_node})</b><br>Risk: {risk_level}<br>Score: {risk_score}/100',
+                icon: 'https://img.icons8.com/color/48/traffic-light.png',
+                width: 36,
+                height: 36
+            }});
+        }} catch (err) {{
+            showMapError('Event marker failed: ' + err.message);
+        }}
+
+        // Affected Buffer Zone Circle
+        try {{
+            new mappls.Circle({{
+                map: map,
+                center: {{ lat: {lat}, lng: {lng} }},
+                radius: {radius_meters},
+                strokeColor: '{risk_color}',
+                strokeOpacity: 1,
+                strokeWeight: 3,
+                fillColor: '{risk_color}',
+                fillOpacity: 0.25
+            }});
+        }} catch (err) {{
+            showMapError('Risk circle failed: ' + err.message);
+        }}
+
+        // Standard Commuter Route (Stuck)
+        if ({has_routing_js}) {{
+            try {{
+                new mappls.Polyline({{
+                    map: map,
+                    path: {std_coords_js},
+                    strokeColor: '#e55353',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 4,
+                    strokeDasharray: '10, 10'
+                }});
+            }} catch (err) {{
+                showMapError('Standard route failed: ' + err.message);
+            }}
+
+            // Diversion Route
+            try {{
+                new mappls.Polyline({{
+                    map: map,
+                    path: {congested_coords_js},
+                    strokeColor: '#2ecc71',
+                    strokeOpacity: 0.9,
+                    strokeWeight: 5
+                }});
+            }} catch (err) {{
+                showMapError('Diversion route failed: ' + err.message);
+            }}
+        }}
+
+        // Emergency Corridor Route & Destination Hospital
+        if ({has_corridor_js}) {{
+            try {{
+                new mappls.Polyline({{
+                    map: map,
+                    path: {corridor_coords_js},
+                    strokeColor: '#3399ff',
+                    strokeOpacity: 0.95,
+                    strokeWeight: 5
+                }});
+                
+                new mappls.Marker({{
+                    map: map,
+                    position: {{ lat: {hosp_lat}, lng: {hosp_lng} }},
+                    popupHtml: '<b>\U0001f3e5 Hospital Destination</b><br>{target_hospital}<br>ETA: {corridor_eta} mins',
+                    icon: 'https://img.icons8.com/color/48/hospital.png',
+                    width: 32,
+                    height: 32
+                }});
+            }} catch (err) {{
+                showMapError('Emergency corridor failed: ' + err.message);
+            }}
+        }}
+
+        // Police Station Markers
+        try {{
+            {police_markers_js}
+        }} catch (err) {{
+            showMapError('Police markers failed: ' + err.message);
+        }}
+    }}
+
+    var layersDrawn = false;
+    function drawOnce() {{
+        if (layersDrawn) return;
+        layersDrawn = true;
+        drawAllLayers();
+    }}
+
+    try {{
+        map.on('load', drawOnce);
+    }} catch (err) {{
+        showMapError('Could not attach load listener: ' + err.message);
+    }}
+
+    setTimeout(drawOnce, 1500);
+}}
+
+setTimeout(function() {{
+    var mapDiv = document.getElementById('map');
+    if (mapDiv && mapDiv.children.length === 0) {{
+        if (typeof mappls !== 'undefined') {{
+            initMap();
+        }} else {{
+            showMapError('Timed out waiting for the Mappls SDK to load. Verify MAPPLS_API_KEY is correct.');
+        }}
+    }}
+}}, 6000);
+</script>
+
+<script
+    src="https://apis.mappls.com/advancedmaps/api/{MAPPLS_KEY}/map_sdk?v=3.0&layer=vector&callback=initMap"
+    onerror="showMapError('Could not load the Mappls SDK script tag — check API key validity.')">
+</script>
+</body>
+</html>
+"""
+    return html
 
 def build_folium_map(lat, lng, risk_level, risk_score, incident_node, target_hospital, routing_res, corridor_res, dispatch_res):
     radius_meters = {
@@ -1236,5 +1476,9 @@ if True:
     st.markdown('<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><img src="https://img.icons8.com/color/48/map.png" width="24" height="24"/><b style="font-size:16px;">Live Affected Network & Diversion Routes</b></div>', unsafe_allow_html=True)
     st.caption(f"📍 {inp['formatted_address']} | Affected radius, real road diversion routes, nearby police & hospitals")
 
-    folium_map = build_folium_map(inp["lat"], inp["lng"], risk, risk_score, inp["zone"], inp["target_hospital"], routing_res, corridor_res, dispatch_res)
-    st_folium(folium_map, height=520, use_container_width=True, returned_objects=[])
+    if MAPPLS_KEY:
+        map_html = build_mappls_map(inp["lat"], inp["lng"], risk, risk_score, inp["zone"], inp["target_hospital"], routing_res, corridor_res, dispatch_res)
+        components.html(map_html, height=520)
+    else:
+        folium_map = build_folium_map(inp["lat"], inp["lng"], risk, risk_score, inp["zone"], inp["target_hospital"], routing_res, corridor_res, dispatch_res)
+        st_folium(folium_map, height=520, use_container_width=True, returned_objects=[])
