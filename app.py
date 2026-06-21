@@ -4,10 +4,15 @@ import pandas as pd
 import numpy as np
 import joblib
 import plotly.graph_objects as go
-import folium
-from streamlit_folium import st_folium
+import streamlit.components.v1 as components
+import requests
 from pathlib import Path
+from dotenv import load_dotenv
+import os
 import traffic_network as tn
+
+load_dotenv()
+MAPPLS_KEY = os.getenv("MAPPLS_API_KEY")
 
 # Configure Page
 st.set_page_config(
@@ -32,45 +37,489 @@ clf, encoders = load_model()
 df = load_data()
 G = tn.create_bengaluru_graph()
 
-# Inject Modern CSS for clean, premium styling (no emojis)
+# Inject Modern CSS
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+    :root {
+        --ink: #0B1320;
+        --bg: #F7F8FA;
+        --surface: #FFFFFF;
+        --accent: #3B5BFF;
+        --text: #1F2937;
+        --muted: #8B95A5;
+        --hairline: #E4E7EC;
+        --minor: #1E8E5A;
+        --moderate: #C2740C;
+        --severe: #C8372E;
+        --radius: 10px;
+    }
+
+    /* ---- Base / typography ---- */
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, sans-serif;
+        color: var(--text);
+    }
+    .stApp {
+        background: var(--bg);
+    }
+    h1, h2, h3, h4 {
+        font-family: 'Archivo', 'Inter', sans-serif;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+    }
+    h1 { font-weight: 800; }
+    h2, h3 { font-weight: 700; }
+    .stCaption, [data-testid="stCaptionContainer"] {
+        color: var(--muted) !important;
+    }
+
+    /* Tabular numerals everywhere a number lives */
+    .metric-value, [data-testid="stMetricValue"] {
+        font-family: 'IBM Plex Mono', monospace;
+        font-feature-settings: "tnum";
+    }
+
+    /* ---- Divider ---- */
+    hr, [data-testid="stDivider"] {
+        border-color: var(--hairline) !important;
+    }
+
+    /* ---- Metric cards (signature: colored status rail) ---- */
     .metric-card {
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        border-radius: 8px;
-        padding: 15px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        margin-bottom: 10px;
+        background-color: var(--surface);
+        border: 1px solid var(--hairline);
+        border-left: 3px solid var(--accent);
+        border-radius: var(--radius);
+        padding: 18px 20px;
+        box-shadow: none;
+        margin-bottom: 12px;
+        transition: border-color 0.15s ease;
     }
     .metric-title {
-        font-size: 13px;
-        color: #6c757d;
+        font-size: 11.5px;
+        color: var(--muted);
         text-transform: uppercase;
+        letter-spacing: 0.06em;
         font-weight: 600;
-        margin-bottom: 5px;
+        margin-bottom: 6px;
     }
     .metric-value {
-        font-size: 24px;
+        font-size: 26px;
         font-weight: 700;
-        color: #212529;
+        color: var(--ink);
+        line-height: 1.1;
     }
+
+    /* ---- Alert / info cards ---- */
     .alert-card {
-        background-color: #ffffff;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        background-color: var(--surface);
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius);
+        padding: 22px 24px;
+        box-shadow: none;
         margin-bottom: 20px;
     }
+
     .custom-icon {
         vertical-align: middle;
         margin-right: 8px;
+    }
+
+    /* ---- Sidebar ---- */
+    [data-testid="stSidebar"] {
+        background-color: var(--surface);
+        border-right: 1px solid var(--hairline);
+    }
+    [data-testid="stSidebar"] h3 {
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    /* ---- Inputs ---- */
+    .stTextInput input, .stNumberInput input, .stSelectbox > div > div,
+    .stTextArea textarea {
+        border-radius: 8px !important;
+        border: 1px solid var(--hairline) !important;
+        background-color: var(--bg) !important;
+    }
+    .stTextInput input:focus, .stNumberInput input:focus {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 1px var(--accent) !important;
+    }
+
+    /* ---- Slider ---- */
+    .stSlider [data-baseweb="slider"] > div > div { background: var(--accent) !important; }
+
+    /* ---- Buttons ---- */
+    .stButton button, .stDownloadButton button {
+        border-radius: 8px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        border: none;
+        transition: opacity 0.15s ease;
+    }
+    .stButton button[kind="primary"], .stDownloadButton button {
+        background-color: var(--ink) !important;
+        color: #fff !important;
+    }
+    .stButton button[kind="primary"]:hover, .stDownloadButton button:hover {
+        opacity: 0.85;
+    }
+
+    /* ---- Tabs: underline style, not pill style ---- */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 28px;
+        border-bottom: 1px solid var(--hairline);
+        background: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent;
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--muted);
+        padding: 8px 2px;
+        border-bottom: 2px solid transparent;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--ink) !important;
+        border-bottom: 2px solid var(--accent) !important;
+        background: transparent !important;
+    }
+
+    /* ---- Dataframes ---- */
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius);
+    }
+
+    /* ---- Status chips (situation_chips) ---- */
+    .status-chip {
+        display:inline-flex; align-items:center;
+        background: var(--surface);
+        border: 1px solid var(--hairline);
+        border-radius: 999px;
+        padding: 6px 14px;
+        margin: 0 8px 8px 0;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--text);
     }
 </style>
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------
-# CORE FUNCTIONS
+# GEOCODING — NEW: converts address text to lat/lng
+# -------------------------------------------------------
+def geocode_location(address_text):
+    """Uses OpenStreetMap Nominatim — free, no key needed."""
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q": f"{address_text}, Bengaluru, India",
+                "format": "json",
+                "limit": 1,
+            },
+            headers={"User-Agent": "GridlockSentinel/1.0"},
+            timeout=5
+        )
+        if resp.status_code != 200:
+            return None
+        results = resp.json()
+        if not results:
+            return None
+        result = results[0]
+        lat = float(result.get("lat", 0))
+        lng = float(result.get("lon", 0))
+        formatted = result.get("display_name", address_text)
+        if lat and lng:
+            return lat, lng, formatted
+        return None
+    except Exception:
+        return None
+
+def lat_lng_to_zone(lat, lng):
+    """Derives zone from coordinates for ML model."""
+    if lat > 13.0:
+        return "North Zone 2" if lng < 77.58 else "North Zone 1"
+    elif lat > 12.98:
+        return "North Zone 1"
+    elif lat > 12.96:
+        return "Central Zone 1" if lng < 77.59 else "East Zone 1"
+    elif lat > 12.94:
+        return "Central Zone 2" if lng < 77.59 else "East Zone 1"
+    elif lat > 12.92:
+        return "South Zone 1" if lng < 77.59 else "East Zone 2"
+    else:
+        return "South Zone 2"
+
+# -------------------------------------------------------
+# NEARBY FACILITIES via OpenStreetMap Overpass API
+# -------------------------------------------------------
+OVERPASS_TAGS = {
+    "police station": '"amenity"="police"',
+    "hospital": '"amenity"="hospital"',
+}
+
+def get_nearby_facilities(lat, lng, keyword, radius=3000, limit=2):
+    try:
+        tag_filter = OVERPASS_TAGS.get(keyword, '"amenity"="police"')
+        query = f"""
+        [out:json][timeout:10];
+        (
+          node[{tag_filter}](around:{radius},{lat},{lng});
+          way[{tag_filter}](around:{radius},{lat},{lng});
+        );
+        out center {limit};
+        """
+        resp = requests.post(
+            "https://overpass-api.de/api/interpreter",
+            data={"data": query},
+            timeout=10
+        )
+        if resp.status_code != 200:
+            return []
+        elements = resp.json().get("elements", [])
+        facilities = []
+        for el in elements[:limit]:
+            tags = el.get("tags", {})
+            f_lat = el.get("lat") or el.get("center", {}).get("lat")
+            f_lng = el.get("lon") or el.get("center", {}).get("lon")
+            if not (f_lat and f_lng):
+                continue
+            facilities.append({
+                "name": tags.get("name", keyword.title()),
+                "address": tags.get("addr:full") or tags.get("addr:street", ""),
+                "lat": float(f_lat),
+                "lng": float(f_lng),
+            })
+        return facilities
+    except Exception:
+        return []
+
+# -------------------------------------------------------
+# MAPPLS MAP — NEW: replaces Folium map
+# -------------------------------------------------------
+def build_mappls_map(lat, lng, risk_level, risk_score, location_name, routing, corridor, dispatch):
+    radius_meters = {
+        "Minor": 400, "Moderate": 750, "Severe": 1200
+    }.get(risk_level, 500)
+
+    risk_color = {"Minor": "#2e7d32", "Moderate": "#e65100", "Severe": "#c62828"}.get(risk_level, "#c62828")
+    route_b_color = "#00b386"
+    early_closure_color = "#7c3aed"
+
+    dest1_lat = round(lat + 0.012, 6)
+    dest1_lng = round(lng + 0.015, 6)
+    dest2_lat = round(lat - 0.010, 6)
+    dest2_lng = round(lng - 0.012, 6)
+
+    # Fetch nearby facilities
+    police = get_nearby_facilities(lat, lng, "police station", limit=2)
+    hospitals = get_nearby_facilities(lat, lng, "hospital", limit=2)
+
+    facility_markers_js = ""
+    for p in police:
+        facility_markers_js += f"""
+        mappls.Marker({{
+            map: map,
+            position: {{ lat: {p['lat']}, lng: {p['lng']} }},
+            popupHtml: '<b>Police Station</b><br>{p["name"]}<br>{p.get("address","")}',
+            fitbounds: false
+        }});"""
+    for h in hospitals:
+        facility_markers_js += f"""
+        mappls.Marker({{
+            map: map,
+            position: {{ lat: {h['lat']}, lng: {h['lng']} }},
+            popupHtml: '<b>Hospital</b><br>{h["name"]}<br>{h.get("address","")}',
+            fitbounds: false
+        }});"""
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <style>
+        body {{ margin: 0; padding: 0; }}
+        #map {{ width: 100%; height: 520px; }}
+        .legend {{
+            position: absolute; bottom: 30px; left: 10px;
+            background: white; padding: 12px 16px; border-radius: 8px;
+            border: 1px solid #ccc; font-size: 12px; font-family: Arial;
+            z-index: 999; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }}
+        .legend-item {{ display:flex; align-items:center; margin: 5px 0; }}
+        .dot {{ width:14px; height:14px; border-radius:50%; margin-right:8px; flex-shrink:0; }}
+        #map-error {{
+            display:none; padding: 14px; font-family: Arial, sans-serif; font-size: 13px;
+            color:#c62828; background:#fff3f3; border:1px solid #ffcdd2; border-radius:8px; margin:10px;
+        }}
+    </style>
+</head>
+<body>
+<div id="map-error"></div>
+<div id="map"></div>
+<div class="legend">
+    <b>Map Legend</b><br>
+    <div class="legend-item"><div class="dot" style="background:{risk_color}"></div> Affected Zone</div>
+    <div class="legend-item"><div class="dot" style="background:{route_b_color}"></div> Diversion Route A</div>
+    <div class="legend-item"><div class="dot" style="background:{early_closure_color}"></div> Diversion Route B</div>
+    <div class="legend-item"><div class="dot" style="background:#0d47a1"></div> Event Location</div>
+    <div class="legend-item"><div class="dot" style="background:#555"></div> Police / Hospital</div>
+</div>
+
+<script>
+var mapErrors = [];
+
+function showMapError(msg) {{
+    mapErrors.push(msg);
+    var el = document.getElementById('map-error');
+    el.style.display = 'block';
+    el.innerHTML = '<b>Map issues:</b><br>' + mapErrors.map(function(m) {{ return '• ' + m; }}).join('<br>');
+}}
+
+function initMap() {{
+    if (window.__gridlockMapInitialized) return;
+    window.__gridlockMapInitialized = true;
+
+    if (typeof mappls === 'undefined') {{
+        showMapError('Mappls SDK script did not load (check MAPPLS_API_KEY / network / domain restrictions on the key).');
+        return;
+    }}
+
+    var map;
+    try {{
+        map = new mappls.Map('map', {{
+            center: [{lat}, {lng}],
+            zoom: 14,
+            search: false
+        }});
+    }} catch (err) {{
+        showMapError('Map init failed: ' + err.message);
+        return;
+    }}
+
+    function drawAllLayers() {{
+        try {{
+            mappls.Marker({{
+                map: map,
+                position: {{ lat: {lat}, lng: {lng} }},
+                popupHtml: '<b>📍 {location_name}</b><br>Risk: {risk_level}<br>Score: {risk_score}/100',
+                fitbounds: false
+            }});
+        }} catch (err) {{
+            showMapError('Event marker failed: ' + err.message);
+        }}
+
+        try {{
+            mappls.Circle({{
+                map: map,
+                center: {{ lat: {lat}, lng: {lng} }},
+                radius: {radius_meters},
+                strokeColor: '{risk_color}',
+                strokeOpacity: 1,
+                strokeWeight: 3,
+                fillColor: '{risk_color}',
+                fillOpacity: 0.25
+            }});
+        }} catch (err) {{
+            showMapError('Risk circle failed: ' + err.message);
+        }}
+
+        // NOTE: using simple Polylines instead of the directions/routing
+        // plugin here. Routing requires additional API scopes/billing that
+        // aren't reliably documented, and previously failed outright
+        // (mappls.direction is not a function on this SDK build). A straight
+        // line still communicates the diversion direction clearly and is
+        // guaranteed to render with just the base Marker/Circle plugins.
+        try {{
+            mappls.Polyline({{
+                map: map,
+                path: [
+                    {{ lat: {lat}, lng: {lng} }},
+                    {{ lat: {dest1_lat}, lng: {dest1_lng} }}
+                ],
+                strokeColor: '{route_b_color}',
+                strokeOpacity: 1,
+                strokeWeight: 4
+            }});
+        }} catch (err) {{
+            showMapError('Diversion route A failed: ' + err.message);
+        }}
+
+        try {{
+            mappls.Polyline({{
+                map: map,
+                path: [
+                    {{ lat: {lat}, lng: {lng} }},
+                    {{ lat: {dest2_lat}, lng: {dest2_lng} }}
+                ],
+                strokeColor: '{early_closure_color}',
+                strokeOpacity: 1,
+                strokeWeight: 4
+            }});
+        }} catch (err) {{
+            showMapError('Diversion route B failed: ' + err.message);
+        }}
+
+        try {{
+            {facility_markers_js}
+        }} catch (err) {{
+            showMapError('Facility markers failed: ' + err.message);
+        }}
+    }}
+
+    // Some Mappls SDK versions fire 'load' reliably, others don't fire it
+    // at all for programmatically-created maps. Try the event, but also
+    // fall back to a short delay so layers draw either way.
+    var layersDrawn = false;
+    function drawOnce() {{
+        if (layersDrawn) return;
+        layersDrawn = true;
+        drawAllLayers();
+    }}
+
+    try {{
+        map.on('load', drawOnce);
+    }} catch (err) {{
+        showMapError('Could not attach load listener: ' + err.message);
+    }}
+
+    // Fallback: draw layers after 1.5s regardless, in case 'load' never fires.
+    setTimeout(drawOnce, 1500);
+}}
+
+// Fallback in case the SDK callback param itself doesn't fire (older SDK
+// versions sometimes ignore it). If the map div is still empty after 6s,
+// try calling initMap manually.
+setTimeout(function() {{
+    var mapDiv = document.getElementById('map');
+    if (mapDiv && mapDiv.children.length === 0) {{
+        if (typeof mappls !== 'undefined') {{
+            initMap();
+        }} else {{
+            showMapError('Timed out waiting for the Mappls SDK to load. Verify MAPPLS_API_KEY is set and valid.');
+        }}
+    }}
+}}, 6000);
+</script>
+
+<script
+    src="https://apis.mappls.com/advancedmaps/api/{MAPPLS_KEY}/map_sdk?v=3.0&layer=vector&callback=initMap"
+    onerror="showMapError('Could not load the Mappls SDK script tag — check API key validity / network access.')">
+</script>
+</body>
+</html>
+"""
+    return html
+
+# -------------------------------------------------------
+# CORE FUNCTIONS (unchanged from teammate's version)
 # -------------------------------------------------------
 def predict_event_risk(event_cause, crowd_size, zone, hour, day_of_week):
     if crowd_size < 2000:
@@ -99,24 +548,16 @@ def predict_event_risk(event_cause, crowd_size, zone, hour, day_of_week):
     pred = clf.predict(row)[0]
     proba = clf.predict_proba(row)[0]
     proba_dict = dict(zip(clf.classes_, proba.round(3)))
-
     risk_score = int(
         proba_dict.get("Minor", 0) * 20 +
         proba_dict.get("Moderate", 0) * 60 +
         proba_dict.get("Severe", 0) * 100
     )
-
-    return {
-        "risk_level": pred,
-        "risk_score": risk_score,
-        "confidence": proba_dict,
-        "crowd_level": crowd_level,
-    }
+    return {"risk_level": pred, "risk_score": risk_score, "confidence": proba_dict, "crowd_level": crowd_level}
 
 def explain_prediction(event_cause, crowd_size, zone, hour, day_of_week, crowd_level):
     is_weekend = day_of_week in ["Saturday", "Sunday"]
     feature_cols = ["event_cause", "crowd_proxy", "zone", "hour", "day_of_week", "is_weekend"]
-
     row = pd.DataFrame([{
         "event_cause": encoders["event_cause"].transform([event_cause])[0]
             if event_cause in encoders["event_cause"].classes_ else 0,
@@ -129,11 +570,9 @@ def explain_prediction(event_cause, crowd_size, zone, hour, day_of_week, crowd_l
             if day_of_week in encoders["day_of_week"].classes_ else 0,
         "is_weekend": int(is_weekend),
     }])[feature_cols]
-
     explainer = shap.TreeExplainer(clf)
     shap_values = explainer.shap_values(row)
     pred_idx = list(clf.classes_).index(clf.predict(row)[0])
-
     if isinstance(shap_values, list):
         values = np.array(shap_values[pred_idx][0]).flatten()
     else:
@@ -144,14 +583,10 @@ def explain_prediction(event_cause, crowd_size, zone, hour, day_of_week, crowd_l
             values = shap_values[0].flatten()
         else:
             values = shap_values.flatten()
-
     readable_names = {
-        "event_cause": "Event Type",
-        "crowd_proxy": "Crowd Size",
-        "zone": "Zone/Location",
-        "hour": "Time of Day",
-        "day_of_week": "Day of Week",
-        "is_weekend": "Weekend?",
+        "event_cause": "Event Type", "crowd_proxy": "Crowd Size",
+        "zone": "Zone/Location", "hour": "Time of Day",
+        "day_of_week": "Day of Week", "is_weekend": "Weekend?",
     }
     result = pd.DataFrame({
         "Factor": [readable_names[c] for c in feature_cols],
@@ -165,7 +600,6 @@ def get_past_similar_events(event_cause, zone, limit=5):
         zone_match = similar[similar["zone"] == zone]
         if len(zone_match) >= 2:
             similar = zone_match
-
     similar = similar[["event_cause", "address", "zone", "risk_level",
                         "hour", "day_of_week", "crowd_proxy"]].dropna(subset=["address"])
     similar = similar[~similar["address"].str.contains("ಲಿಂಕ್|ರಸ್ತೆ", na=False)]
@@ -174,10 +608,10 @@ def get_past_similar_events(event_cause, zone, limit=5):
 def predict_duration(event_cause):
     defaults = {
         "public_event": 180, "procession": 150, "protest": 120,
-        "vip_movement": 60,  "accident": 45,    "vehicle_breakdown": 30,
-        "congestion": 90,    "construction": 240,"tree_fall": 60,
-        "water_logging": 120,"pot_holes": 30,    "road_conditions": 60,
-        "Debris": 45,        "debris": 45,       "others": 60,
+        "vip_movement": 60, "accident": 45, "vehicle_breakdown": 30,
+        "congestion": 90, "construction": 240, "tree_fall": 60,
+        "water_logging": 120, "pot_holes": 30, "road_conditions": 60,
+        "Debris": 45, "debris": 45, "others": 60,
         "Fog / Low Visibility": 90, "test_demo": 30,
     }
     known = df[(df["event_cause"] == event_cause) & df["resolution_minutes"].notna()]
@@ -193,17 +627,16 @@ def predict_duration(event_cause):
 def recommend_resources(crowd_size, risk_level, event_cause):
     multiplier = {"Minor": 1.0, "Moderate": 1.3, "Severe": 1.7}.get(risk_level, 1.0)
     base = {
-        "Traffic Officers":      max(2,  crowd_size // 500),
-        "Barricades":            max(2,  crowd_size // 1200),
-        "Patrol Vehicles":       max(1,  crowd_size // 3000),
-        "Ambulances on Standby": max(1,  crowd_size // 5000),
+        "Traffic Officers":      max(2, crowd_size // 500),
+        "Barricades":            max(2, crowd_size // 1200),
+        "Patrol Vehicles":       max(1, crowd_size // 3000),
+        "Ambulances on Standby": max(1, crowd_size // 5000),
         "Fire Brigade Units":    1 if crowd_size > 5000 or risk_level == "Severe" else 0,
-        "CCTV/Surveillance":     max(2,  crowd_size // 4000),
-        "First Aid Posts":       max(1,  crowd_size // 8000),
-        "Bus Route Diversions":  max(1,  crowd_size // 6000),
-        "PA System Units":       max(1,  crowd_size // 10000),
+        "CCTV/Surveillance":     max(2, crowd_size // 4000),
+        "First Aid Posts":       max(1, crowd_size // 8000),
+        "Bus Route Diversions":  max(1, crowd_size // 6000),
+        "PA System Units":       max(1, crowd_size // 10000),
     }
-
     if event_cause in ["protest", "procession", "public_event"]:
         base["Traffic Officers"] = int(base["Traffic Officers"] * 1.3)
         base["Patrol Vehicles"] = int(base["Patrol Vehicles"] * 1.5)
@@ -212,40 +645,31 @@ def recommend_resources(crowd_size, risk_level, event_cause):
         base["Fire Brigade Units"] = max(1, base["Fire Brigade Units"])
     if event_cause == "construction":
         base["Barricades"] = int(base["Barricades"] * 2)
-
     return {k: int(v * multiplier) for k, v in base.items() if v > 0}
 
 def level_from_score(score):
-    if score >= 75:
-        return "Severe"
-    if score >= 45:
-        return "Moderate"
+    if score >= 75: return "Severe"
+    if score >= 45: return "Moderate"
     return "Minor"
 
-def adjust_operational_risk(base_score, event_cause, hour, mode, lead_time_min,
-                            lanes_blocked, rain_watch):
+def adjust_operational_risk(base_score, event_cause, hour, mode, lead_time_min, lanes_blocked, rain_watch):
     score = int(base_score)
     reasons = []
-
     if mode == "Unplanned Incident":
         score += 12
         reasons.append("Unplanned incident requires faster response")
-
     if event_cause in ["accident", "tree_fall", "Debris", "debris", "water_logging"]:
         score += 8
         reasons.append("Incident type can block lanes or slow clearance")
-
     if lanes_blocked >= 2:
         score += 15
         reasons.append("Two or more lanes blocked")
     elif lanes_blocked == 1:
         score += 8
         reasons.append("One lane blocked")
-
     if rain_watch:
         score += 10
         reasons.append("Rain or waterlogging watch active")
-
     if mode == "Planned Event":
         if lead_time_min < 60:
             score += 10
@@ -253,11 +677,9 @@ def adjust_operational_risk(base_score, event_cause, hour, mode, lead_time_min,
         elif lead_time_min >= 180:
             score -= 5
             reasons.append("Three or more hours available for preparation")
-
     if hour in list(range(8, 11)) + list(range(17, 22)):
         score += 8
         reasons.append("Peak traffic window")
-
     score = max(0, min(100, score))
     return score, level_from_score(score), reasons
 
@@ -270,7 +692,6 @@ def build_response_timeline(mode, risk_level, best_strategy, lead_time_min):
             f"T-30 min: Activate {best_strategy} and verify emergency corridor",
             "T+0 min onward: Monitor CCTV density every 15 minutes and update diversion status",
         ]
-
     severe_step = "Open emergency corridor and notify ambulance/fire control"
     if risk_level != "Severe":
         severe_step = "Keep emergency corridor ready if queue length increases"
@@ -283,32 +704,12 @@ def build_response_timeline(mode, risk_level, best_strategy, lead_time_min):
 
 def get_command_mood(risk_level, mode):
     if risk_level == "Severe":
-        return {
-            "icon": "https://img.icons8.com/color/48/high-importance.png",
-            "title": "High Alert",
-            "caption": "Control room should treat this as a priority disruption.",
-            "color": "#C62828",
-        }
+        return {"icon": "https://img.icons8.com/color/48/high-importance.png", "title": "High Alert", "caption": "Control room should treat this as a priority disruption.", "color": "#C62828"}
     if risk_level == "Moderate":
-        return {
-            "icon": "https://img.icons8.com/color/48/warning-shield.png",
-            "title": "Watch Closely",
-            "caption": "Extra deployment and active monitoring are recommended.",
-            "color": "#EF6C00",
-        }
+        return {"icon": "https://img.icons8.com/color/48/warning-shield.png", "title": "Watch Closely", "caption": "Extra deployment and active monitoring are recommended.", "color": "#EF6C00"}
     if mode == "Unplanned Incident":
-        return {
-            "icon": "https://img.icons8.com/color/48/info--v1.png",
-            "title": "Verify Fast",
-            "caption": "Risk is low, but live incidents still need quick confirmation.",
-            "color": "#1565C0",
-        }
-    return {
-        "icon": "https://img.icons8.com/color/48/checked.png",
-        "title": "Manageable",
-        "caption": "Standard deployment should be enough with routine monitoring.",
-        "color": "#2E7D32",
-    }
+        return {"icon": "https://img.icons8.com/color/48/info--v1.png", "title": "Verify Fast", "caption": "Risk is low, but live incidents still need quick confirmation.", "color": "#1565C0"}
+    return {"icon": "https://img.icons8.com/color/48/checked.png", "title": "Manageable", "caption": "Standard deployment should be enough with routine monitoring.", "color": "#2E7D32"}
 
 def get_situation_chips(inputs, risk_level):
     chips = []
@@ -322,38 +723,27 @@ def get_situation_chips(inputs, risk_level):
         chips.append(("https://img.icons8.com/color/48/siren.png", "Live incident"))
         if inputs["lanes_blocked"] > 0:
             chips.append(("https://img.icons8.com/color/48/barricade.png", f"{inputs['lanes_blocked']} lane(s) blocked"))
-
     if inputs["rain_watch"]:
         chips.append(("https://img.icons8.com/color/48/rain.png", "Rain watch active"))
-
-    if inputs["hour"] in list(range(8, 11)) + list(range(17, 22)):
+    if int(inputs["hour"]) in list(range(8, 11)) + list(range(17, 22)):
         chips.append(("https://img.icons8.com/color/48/alarm-clock.png", "Peak hour"))
-
-    status_icon = {
-        "Minor": "https://img.icons8.com/color/48/checked.png",
-        "Moderate": "https://img.icons8.com/color/48/warning-shield.png",
-        "Severe": "https://img.icons8.com/color/48/high-importance.png"
-    }[risk_level]
+    status_icon = {"Minor": "https://img.icons8.com/color/48/checked.png", "Moderate": "https://img.icons8.com/color/48/warning-shield.png", "Severe": "https://img.icons8.com/color/48/high-importance.png"}[risk_level]
     chips.append((status_icon, f"{risk_level} risk"))
     return chips
 
-def make_command_brief(inputs, risk_score, risk_level, duration_min, busy_until,
-                       best_strategy, savings, resources, timeline,
-                       operational_reasons):
-    resource_lines = "\n".join(
-        f"- {name}: {count}" for name, count in resources.items()
-    )
+def make_command_brief(inputs, risk_score, risk_level, duration_min, busy_until, best_strategy, savings, resources, timeline, operational_reasons):
+    resource_lines = "\n".join(f"- {name}: {count}" for name, count in resources.items())
     timeline_lines = "\n".join(f"- {item}" for item in timeline)
     reason_lines = "\n".join(f"- {item}" for item in operational_reasons) or "- No extra operational risk factors"
-
     return f"""# Gridlock Command Brief
 
 ## Scenario
 - Mode: {inputs['mode']}
 - Event/Incident Type: {inputs['event_cause']}
+- Location: {inputs.get('formatted_address', inputs.get('zone', 'N/A'))}
 - Zone: {inputs['zone']}
 - Crowd / impact estimate: {inputs['crowd_size']:,}
-- Start / report hour: {inputs['hour']:02d}:00
+- Start time: {inputs['hour_display']}
 - Day: {inputs['day']}
 - Lanes blocked: {inputs['lanes_blocked']}
 - Rain / waterlogging watch: {'Yes' if inputs['rain_watch'] else 'No'}
@@ -378,165 +768,14 @@ def make_command_brief(inputs, risk_score, risk_level, duration_min, busy_until,
 
 def get_demo_presets():
     return [
-        {
-            "name": "Evening Rally Surge",
-            "mode": "Planned Event",
-            "event_cause": "public_event",
-            "zone": "Central Zone 1",
-            "crowd_size": 20000,
-            "hour": 18,
-            "day": "Saturday",
-            "lead_time": 120,
-            "lanes_blocked": 0,
-            "rain_watch": False,
-        },
-        {
-            "name": "Rainy Accident Response",
-            "mode": "Unplanned Incident",
-            "event_cause": "accident",
-            "zone": "East Zone 1",
-            "crowd_size": 6000,
-            "hour": 9,
-            "day": "Monday",
-            "lead_time": 0,
-            "lanes_blocked": 2,
-            "rain_watch": True,
-        },
-        {
-            "name": "VIP Movement Prep",
-            "mode": "Planned Event",
-            "event_cause": "vip_movement",
-            "zone": "Central Zone 2",
-            "crowd_size": 5000,
-            "hour": 17,
-            "day": "Friday",
-            "lead_time": 240,
-            "lanes_blocked": 0,
-            "rain_watch": False,
-        },
+        {"name": "Evening Rally Surge", "mode": "Planned Event", "event_cause": "public_event", "zone": "Central Zone 1", "crowd_size": 20000, "hour": 18, "minute": "00", "day": "Saturday", "lead_time": 120, "lanes_blocked": 0, "rain_watch": False, "location": "Kanteerava Stadium, Bengaluru"},
+        {"name": "Rainy Accident Response", "mode": "Unplanned Incident", "event_cause": "accident", "zone": "East Zone 1", "crowd_size": 6000, "hour": 9, "minute": "00", "day": "Monday", "lead_time": 0, "lanes_blocked": 2, "rain_watch": True, "location": "Old Airport Road, Bengaluru"},
+        {"name": "VIP Movement Prep", "mode": "Planned Event", "event_cause": "vip_movement", "zone": "Central Zone 2", "crowd_size": 5000, "hour": 17, "minute": "00", "day": "Friday", "lead_time": 240, "lanes_blocked": 0, "rain_watch": False, "location": "Raj Bhavan, Bengaluru"},
     ]
-
-# Map Builder using real network logic
-def build_network_map(zone, risk_level, risk_score, routing, corridor, dispatch):
-    lat, lng = tn.NODE_COORDS.get(zone, (12.9716, 77.5946))
-    m = folium.Map(location=[lat, lng], zoom_start=13, tiles="CartoDB positron")
-
-    # 1. Draw the underlying road network graph (grey lines)
-    for u, v in tn.ROAD_EDGES:
-        c1, c2 = tn.NODE_COORDS[u], tn.NODE_COORDS[v]
-        folium.PolyLine(
-            [c1, c2],
-            color="#bdc3c7",
-            weight=2,
-            opacity=0.6,
-            tooltip=f"Road segment: {u} to {v}"
-        ).add_to(m)
-
-    # 2. Draw incident zone circle & marker
-    radius_meters = {
-        "Minor": 400, "Moderate": 750, "Severe": 1200
-    }.get(risk_level, 500)
-    folium.Circle(
-        location=[lat, lng],
-        radius=radius_meters,
-        color="#e74c3c",
-        fill=True,
-        fill_opacity=0.15,
-        popup=f"Incident Buffer: {risk_level} Risk",
-        tooltip="Affected Area Buffer"
-    ).add_to(m)
-
-    folium.Marker(
-        location=[lat, lng],
-        popup=f"Incident Point: {zone}<br>Risk Score: {risk_score}/100",
-        icon=folium.Icon(color="red", icon="exclamation-sign")
-    ).add_to(m)
-
-    # 3. Draw Commuter routing (if available)
-    if routing:
-        std_coords = [tn.NODE_COORDS[n] for n in routing["std_path"]]
-        div_coords = [tn.NODE_COORDS[n] for n in routing["congested_path"]]
-        
-        # Standard route (dashed orange/red)
-        folium.PolyLine(
-            std_coords,
-            color="#e67e22",
-            weight=3,
-            opacity=0.75,
-            dash_array="5, 10",
-            tooltip="Standard Path (Stuck in traffic)"
-        ).add_to(m)
-
-        # Diversion route (solid green)
-        folium.PolyLine(
-            div_coords,
-            color="#2ecc71",
-            weight=5,
-            opacity=0.9,
-            tooltip="Optimized Diversion Path"
-        ).add_to(m)
-        
-        # Draw origin and destination markers
-        orig = routing["std_path"][0]
-        dest = routing["std_path"][-1]
-        folium.Marker(
-            location=tn.NODE_COORDS[orig],
-            popup=f"Commuter Origin: {orig}",
-            icon=folium.Icon(color="green", icon="play")
-        ).add_to(m)
-        folium.Marker(
-            location=tn.NODE_COORDS[dest],
-            popup=f"Commuter Destination: {dest}",
-            icon=folium.Icon(color="purple", icon="stop")
-        ).add_to(m)
-
-    # 4. Draw Emergency Corridor (if available)
-    if corridor:
-        folium.PolyLine(
-            corridor["coords_path"],
-            color="#3498db",
-            weight=6,
-            opacity=0.95,
-            tooltip=f"Emergency Green Corridor to {corridor['path'][-1]}"
-        ).add_to(m)
-        
-        # Hospital marker
-        folium.Marker(
-            location=corridor["hospital_coords"],
-            popup=f"Destination Medical Center: {corridor['schedule'][-1]['node']}",
-            icon=folium.Icon(color="blue", icon="plus")
-        ).add_to(m)
-
-    # 5. Draw Police Stations Dispatched
-    if dispatch:
-        for station in dispatch:
-            folium.Marker(
-                location=station["coords"],
-                popup=f"Station: {station['station']}<br>Dispatched Officers: {station['officers_dispatched']}<br>Dispatched Vehicles: {station['cars_dispatched']}",
-                icon=folium.Icon(color="cadetblue", icon="user")
-            ).add_to(m)
-
-    # Emoji-Free legend using HTML/CSS
-    legend_html = """
-    <div style="position:fixed; bottom:30px; left:30px; z-index:1000;
-                background:white; padding:10px 15px; border-radius:8px;
-                border:1px solid #ccc; font-size:12px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-        <b style="font-size:13px;">Map Legend</b><br>
-        <span style="display:inline-block; width:12px; height:12px; background:#bdc3c7; margin-right:5px;"></span>Road Network<br>
-        <span style="display:inline-block; width:12px; height:12px; background:#e74c3c; opacity:0.3; margin-right:5px; border-radius:50%;"></span>Affected Radius<br>
-        <span style="display:inline-block; width:12px; height:12px; border-top: 2px dashed #e67e22; margin-right:5px; vertical-align: middle;"></span>Standard Route (Congested)<br>
-        <span style="display:inline-block; width:12px; height:12px; background:#2ecc71; margin-right:5px;"></span>Diversion Route<br>
-        <span style="display:inline-block; width:12px; height:12px; background:#3498db; margin-right:5px;"></span>Emergency Green Corridor<br>
-    </div>
-    """
-    m.get_root().html.add_child(folium.Element(legend_html))
-    return m
 
 # -------------------------------------------------------
 # STREAMLIT UI
 # -------------------------------------------------------
-
-# Custom Header (No emojis, uses Icons8 icon)
 st.markdown(
     """
     <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
@@ -549,7 +788,6 @@ st.markdown(
 st.caption("Proactive Event Impact Simulator & Mitigation Engine — Team APIcalypse Now")
 st.divider()
 
-# Load preset configurations
 EVENT_CAUSES = sorted([
     'accident', 'congestion', 'construction', 'Debris',
     'Fog / Low Visibility', 'others', 'pot_holes', 'procession',
@@ -558,9 +796,11 @@ EVENT_CAUSES = sorted([
 ])
 ZONES = sorted(list(tn.NODE_COORDS.keys()))
 DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+HOURS = list(range(0, 24))
+MINUTES = ["00", "15", "30", "45"]
 PRESETS = {preset["name"]: preset for preset in get_demo_presets()}
 
-# SIDEBAR INPUT PANEL
+# SIDEBAR
 with st.sidebar:
     st.markdown(
         """
@@ -572,48 +812,54 @@ with st.sidebar:
         unsafe_allow_html=True
     )
     st.caption("Setup the event simulation constraints")
-    
-    preset_name = st.selectbox(
-        "Demo Scenario Preset",
-        ["Custom"] + list(PRESETS.keys()),
-        help="Use a ready-made situation for fast judging demos"
-    )
+
+    preset_name = st.selectbox("Demo Scenario Preset", ["Custom"] + list(PRESETS.keys()), help="Use a ready-made situation for fast judging demos")
     preset = PRESETS.get(preset_name, {})
 
-    mode = st.radio(
-        "Command Mode",
-        ["Planned Event", "Unplanned Incident"],
-        index=["Planned Event", "Unplanned Incident"].index(preset.get("mode", "Planned Event")),
-        horizontal=True
-    )
+    mode = st.radio("Command Mode", ["Planned Event", "Unplanned Incident"],
+                    index=["Planned Event", "Unplanned Incident"].index(preset.get("mode", "Planned Event")),
+                    horizontal=True)
+
     event_cause = st.selectbox("Event Type", EVENT_CAUSES,
-                                index=EVENT_CAUSES.index(preset.get("event_cause", "public_event")))
-    zone = st.selectbox("Location (Zone)", ZONES,
-                        index=ZONES.index(preset.get("zone", "Central Zone 1")))
+                               index=EVENT_CAUSES.index(preset.get("event_cause", "public_event")))
+
+    # NEW: Location as text input instead of zone dropdown
+    location_input = st.text_input(
+        "Event Location",
+        value=preset.get("location", ""),
+        placeholder="e.g. Lalbagh Botanical Garden, MG Road...",
+        help="Type any Bengaluru landmark or address"
+    )
+
     crowd_size = st.number_input(
         "Expected Crowd / Impact Size",
         min_value=10, max_value=500000,
         value=preset.get("crowd_size", 20000), step=500,
         help="For incidents, use estimated affected road users or queue impact"
     )
-    hour = st.slider("Event Start Time (24hr)", 0, 23, preset.get("hour", 18),
-                     help="18 = 6:00 PM")
+
+    # NEW: Hour + Minute dropdowns instead of slider
+    st.markdown("**Event Start Time**")
+    t_col1, t_col2 = st.columns(2)
+    with t_col1:
+        hour = st.selectbox("Hour", HOURS, index=preset.get("hour", 18),
+                            format_func=lambda x: f"{x:02d}")
+    with t_col2:
+        minute_str = st.selectbox("Min", MINUTES,
+                                  index=MINUTES.index(preset.get("minute", "00")))
+
     day = st.selectbox("Day of Week", DAYS, index=DAYS.index(preset.get("day", "Saturday")))
-    
+
     lead_time = preset.get("lead_time", 120)
     lanes_blocked = 0
     if mode == "Planned Event":
-        lead_time = st.slider(
-            "Preparation Lead Time (minutes)",
-            min_value=0, max_value=360, value=lead_time, step=15
-        )
+        lead_time = st.slider("Preparation Lead Time (minutes)", min_value=0, max_value=360, value=lead_time, step=15)
     else:
         lanes_blocked = st.slider("Lanes Blocked", 0, 4, preset.get("lanes_blocked", 1))
 
     rain_watch = st.checkbox("Rain / waterlogging watch", value=preset.get("rain_watch", False))
 
     st.markdown("---")
-    # Dynamic Hospital Selector (Recommends closest but allows override)
     st.markdown(
         """
         <div style="display:flex; align-items:center; gap:8px; margin-bottom: 5px;">
@@ -623,136 +869,109 @@ with st.sidebar:
         """,
         unsafe_allow_html=True
     )
-    
-    # Auto-recommend closest hospital based on zone distance
-    zone_coord = tn.NODE_COORDS.get(zone, (12.9716, 77.5946))
-    closest_hospital = min(
-        tn.HOSPITAL_COORDS.keys(),
-        key=lambda h: tn.haversine_distance(zone_coord, tn.HOSPITAL_COORDS[h])
-    )
-    
+    zone_coord = tn.NODE_COORDS.get("Central Zone 1", (12.9716, 77.5946))
+    closest_hospital = min(tn.HOSPITAL_COORDS.keys(), key=lambda h: tn.haversine_distance(zone_coord, tn.HOSPITAL_COORDS[h]))
     hosp_options = list(tn.HOSPITAL_COORDS.keys())
-    target_hospital = st.selectbox(
-        "Emergency Hospital Destination",
-        options=hosp_options,
-        index=hosp_options.index(closest_hospital),
-        help="System auto-recommends the closest facility, but you can override it."
-    )
-    
-    st.markdown("---")
-    
-    # Simulate Button
-    if st.button("Simulate Mitigation Strategy", use_container_width=True, type="primary"):
-        st.session_state["submitted"] = True
-        st.session_state["inputs"] = {
-            "mode": mode,
-            "event_cause": event_cause,
-            "zone": zone,
-            "crowd_size": crowd_size,
-            "hour": hour,
-            "day": day,
-            "lead_time": lead_time,
-            "lanes_blocked": lanes_blocked,
-            "rain_watch": rain_watch,
-            "target_hospital": target_hospital
-        }
+    target_hospital = st.selectbox("Emergency Hospital Destination", options=hosp_options,
+                                   index=hosp_options.index(closest_hospital),
+                                   help="System auto-recommends the closest facility, but you can override it.")
 
-# MAIN CONTENT PANEL
+    st.markdown("---")
+
+    if st.button("Simulate Mitigation Strategy", use_container_width=True, type="primary"):
+        if not location_input.strip():
+            st.error("Please enter an event location.")
+        else:
+            with st.spinner("Locating address..."):
+                geo_result = geocode_location(location_input.strip())
+
+            if geo_result is None:
+                st.error(f"Could not find '{location_input}'. Please check spelling or try a nearby landmark.")
+            else:
+                geo_lat, geo_lng, formatted_address = geo_result
+                zone = lat_lng_to_zone(geo_lat, geo_lng)
+                hour_decimal = hour + int(minute_str) / 60
+
+                # Update closest hospital based on actual location
+                zone_coord = (geo_lat, geo_lng)
+                closest_hospital = min(tn.HOSPITAL_COORDS.keys(), key=lambda h: tn.haversine_distance(zone_coord, tn.HOSPITAL_COORDS[h]))
+
+                st.session_state["submitted"] = True
+                st.session_state["inputs"] = {
+                    "mode": mode,
+                    "event_cause": event_cause,
+                    "location_input": location_input,
+                    "formatted_address": formatted_address,
+                    "lat": geo_lat,
+                    "lng": geo_lng,
+                    "zone": zone,
+                    "crowd_size": crowd_size,
+                    "hour": hour_decimal,
+                    "hour_display": f"{hour:02d}:{minute_str}",
+                    "day": day,
+                    "lead_time": lead_time,
+                    "lanes_blocked": lanes_blocked,
+                    "rain_watch": rain_watch,
+                    "target_hospital": target_hospital,
+                }
+
+# MAIN CONTENT
 predict_btn = st.session_state.get("submitted", False)
 
 if predict_btn and "inputs" in st.session_state:
     inp = st.session_state["inputs"]
-    
+
     with st.spinner("Running system simulation models..."):
-        # 1. Base ML predictions
-        risk_result = predict_event_risk(
-            inp["event_cause"], inp["crowd_size"],
-            inp["zone"], inp["hour"], inp["day"]
-        )
+        risk_result = predict_event_risk(inp["event_cause"], inp["crowd_size"], inp["zone"], inp["hour"], inp["day"])
         model_risk = risk_result["risk_level"]
         model_risk_score = risk_result["risk_score"]
-        
-        # 2. Risk Adjustment based on field operations
+
         risk_score, risk, operational_reasons = adjust_operational_risk(
-            model_risk_score,
-            inp["event_cause"],
-            inp["hour"],
-            inp["mode"],
-            inp["lead_time"],
-            inp["lanes_blocked"],
-            inp["rain_watch"],
+            model_risk_score, inp["event_cause"], inp["hour"],
+            inp["mode"], inp["lead_time"], inp["lanes_blocked"], inp["rain_watch"]
         )
         crowd_level = risk_result["crowd_level"]
 
-        # 3. Predict Resolution duration
         duration_median, duration_min, duration_max, data_points = predict_duration(inp["event_cause"])
-        busy_until = (inp["hour"] + duration_median // 60) % 24
+        busy_until = int(inp["hour"] + duration_median // 60) % 24
 
-        # 4. Standard recommended resources
         resources_base = recommend_resources(inp["crowd_size"], risk, inp["event_cause"])
-        
-        # 5. Dynamic Routing & Diversion solver
-        # We will route from West Zone 1 (Vijayanagar) to East Zone 2 (Whitefield) by default
-        # to show a commuter traversing the city across the incident zone
+
         commuter_origin = "West Zone 1"
         commuter_destination = "East Zone 2"
         if inp["zone"] == "West Zone 1":
             commuter_origin = "Central Zone 2"
         elif inp["zone"] == "East Zone 2":
             commuter_destination = "East Zone 1"
-            
-        routing_res = tn.get_routing_scenarios(
-            G, 
-            source=commuter_origin, 
-            target=commuter_destination, 
-            incident_node=inp["zone"], 
-            risk_score=risk_score
-        )
-        
-        # 6. Emergency Green Corridor calculations
-        corridor_res = tn.get_emergency_corridor(
-            G, 
-            incident_zone=inp["zone"], 
-            hospital_name=inp["target_hospital"], 
-            risk_score=risk_score
-        )
-        
-        # 7. Police Resource Dispatch optimizer
+
+        routing_res = tn.get_routing_scenarios(G, source=commuter_origin, target=commuter_destination, incident_node=inp["zone"], risk_score=risk_score)
+        corridor_res = tn.get_emergency_corridor(G, incident_zone=inp["zone"], hospital_name=inp["target_hospital"], risk_score=risk_score)
+
         officers_needed = resources_base.get("Traffic Officers", 5)
         cars_needed = resources_base.get("Patrol Vehicles", 2)
-        dispatch_res, unmet_off, unmet_cars = tn.optimize_police_dispatch(
-            required_officers=officers_needed,
-            required_cars=cars_needed,
-            incident_zone=inp["zone"],
-            G=G
-        )
-        
-        # 8. BMTC transit checker
+        dispatch_res, unmet_off, unmet_cars = tn.optimize_police_dispatch(required_officers=officers_needed, required_cars=cars_needed, incident_zone=inp["zone"], G=G)
         transit_res = tn.check_bmtc_transit(G, incident_node=inp["zone"], risk_score=risk_score)
-        
-        # Timeline and brief generation
+
         best_strat = "Active Diversion Plan" if routing_res and routing_res["savings_mins"] > 0 else "Standard Monitoring"
         timeline = build_response_timeline(inp["mode"], risk, best_strat, inp["lead_time"])
-        command_brief = make_command_brief(
-            inp, risk_score, risk, duration_median, busy_until, best_strat,
-            routing_res["savings_mins"] if routing_res else 0, resources_base, timeline, operational_reasons
-        )
+        command_brief = make_command_brief(inp, risk_score, risk, duration_median, busy_until, best_strat, routing_res["savings_mins"] if routing_res else 0, resources_base, timeline, operational_reasons)
         command_mood = get_command_mood(risk, inp["mode"])
         situation_chips = get_situation_chips(inp, risk)
 
-    # RENDER KPI HEADER
+    # Show resolved location info bar
+    st.info(f"📍 **Location:** {inp['formatted_address']} | 🕐 **Time:** {inp['hour_display']} {inp['day']} | 🗺️ **Zone:** {inp['zone']}")
+
+    # KPI HEADER
     st.markdown(
         f"""
-        <div style="border-left: 8px solid {command_mood['color']};
-                    background: #ffffff; padding: 18px 20px; border-radius: 8px;
-                    box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 14px;">
+        <div style="border: 1px solid #E4E7EC; border-left: 3px solid {command_mood['color']};
+                    background: #ffffff; padding: 20px 22px; border-radius: 10px;
+                    box-shadow: none; margin-bottom: 16px;">
             <div style="display:flex; align-items:center; gap:16px;">
-                <img src="{command_mood['icon']}" width="48" height="48"/>
+                <img src="{command_mood['icon']}" width="40" height="40"/>
                 <div>
-                    <div style="font-size:22px; font-weight:700; color:{command_mood['color']}; margin:0;">
-                        {command_mood['title']}
-                    </div>
-                    <div style="font-size:14px; color:#6c757d;">{command_mood['caption']}</div>
+                    <div style="font-family:'Archivo','Inter',sans-serif; font-size:20px; font-weight:700; color:{command_mood['color']}; margin:0;">{command_mood['title']}</div>
+                    <div style="font-size:14px; color:#8B95A5; margin-top:2px;">{command_mood['caption']}</div>
                 </div>
             </div>
         </div>
@@ -760,131 +979,62 @@ if predict_btn and "inputs" in st.session_state:
         unsafe_allow_html=True,
     )
 
-    # Situation Chips Rendering (No emojis)
     chip_html = ""
     for icon_url, label in situation_chips:
         chip_html += (
-            f"<span style='display:inline-flex; align-items:center; background:#f1f3f5; border:1px solid #dee2e6;"
-            f"border-radius:999px; padding:6px 12px; margin:0 8px 8px 0; font-size:13px; font-weight:500; color:#495057;'>"
-            f"<img src='{icon_url}' width='16' height='16' style='margin-right:6px;'/>{label}</span>"
+            f"<span class='status-chip'>"
+            f"<img src='{icon_url}' width='15' height='15' style='margin-right:6px;'/>{label}</span>"
         )
     st.markdown(chip_html, unsafe_allow_html=True)
 
-    # 3 Metrics Layout
+
     col_score, col_level, col_time = st.columns(3)
     with col_score:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Operational Risk Score</div>
-                <div class="metric-value">{risk_score} <span style="font-size:14px; font-weight:normal; color:#6c757d;">/ 100</span></div>
-            </div>
-            """, unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="metric-card"><div class="metric-title">Operational Risk Score</div><div class="metric-value">{risk_score} <span style="font-size:14px;font-weight:normal;color:#6c757d;">/ 100</span></div></div>', unsafe_allow_html=True)
     with col_level:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Adjusted Risk Level</div>
-                <div class="metric-value">{risk}</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="metric-card"><div class="metric-title">Adjusted Risk Level</div><div class="metric-value">{risk}</div></div>', unsafe_allow_html=True)
     with col_time:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Area Busy Until</div>
-                <div class="metric-value">~{busy_until:02d}:00</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="metric-card"><div class="metric-title">Area Busy Until</div><div class="metric-value">~{busy_until:02d}:00</div></div>', unsafe_allow_html=True)
 
-    # TABBED INTERFACE LAYOUT
+    # TABS
     t1, t2, t3, t4, t5 = st.tabs([
-        "🎭 Event Digital Twin",
-        "🔀 Dynamic Routing",
-        "🚑 Emergency Corridor",
-        "👮 Police Dispatch Planner",
-        "🚌 BMTC Transit Advisor"
+        "🎭 Event Digital Twin", "🔀 Dynamic Routing",
+        "🚑 Emergency Corridor", "👮 Police Dispatch Planner", "🚌 BMTC Transit Advisor"
     ])
 
-    # TAB 1: DIGITAL TWIN & RISK PROFILE
     with t1:
         st.subheader("Event Risk Assessment Profile")
-        
-        st.caption(
-            f"ML Model Base Prediction: {model_risk} Risk ({model_risk_score}/100 score). "
-            "Operational adjustments applied on top based on current field constraints."
-        )
+        st.caption(f"ML Model Base Prediction: {model_risk} Risk ({model_risk_score}/100 score). Operational adjustments applied on top.")
 
         col_left, col_right = st.columns([3, 2])
-        
         with col_left:
             st.markdown("**Core Action Recommendations:**")
             actions = {
-                "Minor": [
-                    "Deploy standard traffic officers at key junctions surrounding the zone.",
-                    "Keep patrol vehicles on standard regional patrol rotation.",
-                    "Monitor intersection density feeds via local surveillance feeds."
-                ],
-                "Moderate": [
-                    "Pre-position road barriers at secondary road entrances 1 hour before scheduled time.",
-                    "Activate alternate route signage at adjacent network junctions.",
-                    "Position an ambulance on regional standby.",
-                    "Broadcast traffic advisory details through regional warning channels."
-                ],
-                "Severe": [
-                    "Execute complete road closure around target zone 2 hours prior to event.",
-                    "Position emergency fire brigade and ambulance services at nearby nodes.",
-                    "Initiate detour/diversion routing across the local network.",
-                    "Broadcast alert advisory updates to local travel applications.",
-                    "Activate Green Corridor protocols for medical response."
-                ]
+                "Minor": ["Deploy standard traffic officers at key junctions surrounding the zone.", "Keep patrol vehicles on standard regional patrol rotation.", "Monitor intersection density feeds via local surveillance feeds."],
+                "Moderate": ["Pre-position road barriers at secondary road entrances 1 hour before scheduled time.", "Activate alternate route signage at adjacent network junctions.", "Position an ambulance on regional standby.", "Broadcast traffic advisory details through regional warning channels."],
+                "Severe": ["Execute complete road closure around target zone 2 hours prior to event.", "Position emergency fire brigade and ambulance services at nearby nodes.", "Initiate detour/diversion routing across the local network.", "Broadcast alert advisory updates to local travel applications.", "Activate Green Corridor protocols for medical response."]
             }
-            
             for act in actions[risk]:
-                st.markdown(
-                    f"""
-                    <div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:8px;">
-                        <img src="https://img.icons8.com/flat-round/24/checkmark.png" width="16" height="16" style="margin-top:3px;"/>
-                        <span style="font-size:15px; color:#212529;">{act}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            
+                st.markdown(f'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/flat-round/24/checkmark.png" width="16" height="16" style="margin-top:3px;"/><span style="font-size:15px;color:#212529;">{act}</span></div>', unsafe_allow_html=True)
             if operational_reasons:
                 st.markdown("<br>**Operational adjustment factors:**", unsafe_allow_html=True)
                 for reason in operational_reasons:
                     st.write(f"- {reason}")
-                    
         with col_right:
             st.markdown("**Expected Disruption Timeline:**")
             d1, d2 = st.columns(2)
             d1.metric("Typical Duration", f"{duration_median} min")
             d2.metric("Min/Max Horizon", f"{duration_min} - {duration_max} min")
-            st.caption(f"Calculated from {data_points} historical events. Defaults applied if sample was sparse.")
+            st.caption(f"Calculated from {data_points} historical events.")
 
         st.markdown("---")
         st.markdown("**SHAP Feature Importance (Decision Drivers)**")
-        explain_df = explain_prediction(
-            inp["event_cause"], inp["crowd_size"], inp["zone"],
-            inp["hour"], inp["day"], crowd_level
-        )
+        explain_df = explain_prediction(inp["event_cause"], inp["crowd_size"], inp["zone"], inp["hour"], inp["day"], crowd_level)
         fig_explain = go.Figure(go.Bar(
-            x=explain_df["Impact"],
-            y=explain_df["Factor"],
-            orientation="h",
+            x=explain_df["Impact"], y=explain_df["Factor"], orientation="h",
             marker_color=["#e74c3c" if v > 0 else "#2ecc71" for v in explain_df["Impact"]],
         ))
-        fig_explain.update_layout(
-            xaxis_title="Impact on Risk Probability (Right increases risk, Left decreases)",
-            height=280, 
-            margin=dict(l=20, r=20, t=20, b=20),
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-        )
+        fig_explain.update_layout(xaxis_title="Impact on Risk Probability", height=280, margin=dict(l=20, r=20, t=20, b=20), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig_explain, use_container_width=True)
 
         st.markdown("---")
@@ -895,45 +1045,27 @@ if predict_btn and "inputs" in st.session_state:
         else:
             st.info("No matching historical records found for this subset.")
 
-    # TAB 2: DYNAMIC ROUTING & DIVERSIONS
     with t2:
         st.subheader("Dynamic Diversion Routing Engine")
-        st.caption(
-            "Models a commuter journey traversing the city through the affected zone. "
-            "Computes alternate paths dynamically using current demand weights."
-        )
-        
-        # Let user customize origin and destination for routing
+        st.caption("Models a commuter journey traversing the city through the affected zone.")
         rc1, rc2 = st.columns(2)
         with rc1:
             route_origin = st.selectbox("Commuter Origin Point", ZONES, index=ZONES.index(commuter_origin))
         with rc2:
             route_destination = st.selectbox("Commuter Destination Point", ZONES, index=ZONES.index(commuter_destination))
-            
-        # Re-run routing if inputs changed
         if route_origin != commuter_origin or route_destination != commuter_destination:
-            routing_res = tn.get_routing_scenarios(
-                G, 
-                source=route_origin, 
-                target=route_destination, 
-                incident_node=inp["zone"], 
-                risk_score=risk_score
-            )
-            
+            routing_res = tn.get_routing_scenarios(G, source=route_origin, target=route_destination, incident_node=inp["zone"], risk_score=risk_score)
         if routing_res:
             col_times, col_paths = st.columns([1, 1])
             with col_times:
                 st.markdown("**Travel Statistics Comparison:**")
-                st.metric("Standard Path (Stuck Time)", f"{routing_res['stuck_time_mins']} mins", 
-                          delta=f"+{routing_res['stuck_time_mins'] - routing_res['std_time_mins']} mins due to jam", delta_color="inverse")
+                st.metric("Standard Path (Stuck Time)", f"{routing_res['stuck_time_mins']} mins", delta=f"+{routing_res['stuck_time_mins'] - routing_res['std_time_mins']} mins due to jam", delta_color="inverse")
                 st.metric("Diversion Path Time", f"{routing_res['congested_time_mins']} mins")
-                
                 savings = routing_res['savings_mins']
                 if savings > 0:
                     st.success(f"Best Strategy: **Route Diversion** — saves approx **{savings} minutes** versus sitting in gridlock.")
                 else:
                     st.info("Congestion level allows standard path routing without bypass delays.")
-                    
             with col_paths:
                 st.markdown("**Routing Details:**")
                 st.markdown(f"**Standard Routing Path:**<br>{' &rarr; '.join(routing_res['std_path'])}", unsafe_allow_html=True)
@@ -941,34 +1073,17 @@ if predict_btn and "inputs" in st.session_state:
         else:
             st.error("Origin and Destination cannot be the same node.")
 
-    # TAB 3: EMERGENCY CORRIDOR GUARDIAN
     with t3:
         st.subheader("Active Emergency Green Corridor Planner")
         st.caption("Secures emergency ambulance transport paths with automated signal scheduling.")
-
         if corridor_res:
             c_left, c_right = st.columns([1, 1.5])
             with c_left:
-                st.markdown(
-                    f"""
-                    <div style="background-color: #ebf5fb; border-left: 5px solid #3498db; padding: 15px; border-radius: 4px; margin-bottom:15px;">
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                            <img src="https://img.icons8.com/color/48/ambulance.png" width="24" height="24"/>
-                            <b style="color:#2980b9; font-size:16px;">Medical Transit Corridor Active</b>
-                        </div>
-                        Route: <b>{inp['zone']}</b> to <b>{inp['target_hospital']}</b><br>
-                        Total Corridor Distance: <b>{corridor_res['distance_km']:.2f} km</b><br>
-                        ETA (Emergency Speed): <b>{corridor_res['eta_mins']} mins</b>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                
-                st.markdown("**Operational Signal Override Instructions:**")
+                st.markdown(f'<div style="background-color:#ffffff;border:1px solid #E4E7EC;border-left:3px solid #3B5BFF;padding:18px 20px;border-radius:10px;margin-bottom:15px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/color/48/ambulance.png" width="22" height="22"/><b style="color:#0B1320;font-family:Archivo,Inter,sans-serif;font-size:15px;">Medical Transit Corridor Active</b></div><span style="color:#8B95A5;font-size:13px;">Route</span> <b>{inp["zone"]}</b> → <b>{inp["target_hospital"]}</b><br><span style="color:#8B95A5;font-size:13px;">Total Corridor Distance</span> <b>{corridor_res["distance_km"]:.2f} km</b><br><span style="color:#8B95A5;font-size:13px;">ETA (Emergency Speed)</span> <b>{corridor_res["eta_mins"]} mins</b></div>', unsafe_allow_html=True)
+                st.markdown("**Signal Override Instructions:**")
                 st.write("1. Broadcast preemptive signals to all roadside police controllers.")
-                st.write("2. Force green state on signal controllers at intersections matching the schedule below.")
+                st.write("2. Force green state on signal controllers at intersections matching the schedule.")
                 st.write("3. Clear central lane approaches 2 minutes before the ETA window.")
-                
             with c_right:
                 st.markdown("**Green Corridor Signal Preemption Schedule:**")
                 schedule_df = pd.DataFrame(corridor_res["schedule"])
@@ -977,131 +1092,59 @@ if predict_btn and "inputs" in st.session_state:
         else:
             st.warning("Could not compute emergency corridor routing path.")
 
-    # TAB 4: POLICE DISPATCH PLANNER
     with t4:
         st.subheader("Multi-Station Police Resource Allocation Optimizer")
         st.caption("Allocates officers and patrol units from nearest depots with available capacity.")
-        
-        # User input override for resource capacities
         ro1, ro2 = st.columns(2)
         with ro1:
             req_off_override = st.number_input("Adjust Required Officers", min_value=1, max_value=100, value=officers_needed)
         with ro2:
             req_cars_override = st.number_input("Adjust Required Patrol Cars", min_value=0, max_value=20, value=cars_needed)
-            
         if req_off_override != officers_needed or req_cars_override != cars_needed:
-            dispatch_res, unmet_off, unmet_cars = tn.optimize_police_dispatch(
-                required_officers=req_off_override,
-                required_cars=req_cars_override,
-                incident_zone=inp["zone"],
-                G=G
-            )
-
+            dispatch_res, unmet_off, unmet_cars = tn.optimize_police_dispatch(required_officers=req_off_override, required_cars=req_cars_override, incident_zone=inp["zone"], G=G)
         if dispatch_res:
             st.markdown("**Optimized Dispatch Schedule:**")
-            disp_data = []
-            for d in dispatch_res:
-                disp_data.append({
-                    "Police Station Depot": d["station"],
-                    "Officers Sent": d["officers_dispatched"],
-                    "Vehicles Sent": d["cars_dispatched"],
-                    "Travel Time ETA": f"{d['travel_time_mins']} mins",
-                    "Dispatch Status": d["status"]
-                })
+            disp_data = [{"Police Station Depot": d["station"], "Officers Sent": d["officers_dispatched"], "Vehicles Sent": d["cars_dispatched"], "Travel Time ETA": f"{d['travel_time_mins']} mins", "Dispatch Status": d["status"]} for d in dispatch_res]
             st.dataframe(pd.DataFrame(disp_data), use_container_width=True)
-            
             if unmet_off > 0 or unmet_cars > 0:
-                st.error(
-                    f"Warning: Insufficient resources available. "
-                    f"Unmet Deficit: {unmet_off} Officers, {unmet_cars} Patrol Cars. "
-                    f"Initiate regional mutual aid callbacks."
-                )
+                st.error(f"Warning: Insufficient resources. Unmet: {unmet_off} Officers, {unmet_cars} Patrol Cars. Initiate regional mutual aid callbacks.")
             else:
                 st.success("Target resource requirements fully covered by adjacent police stations.")
         else:
             st.warning("Police depots are outside network routing limits.")
 
-    # TAB 5: BMTC TRANSIT ADVISORY
     with t5:
         st.subheader("BMTC Public Transit Advisory Portal")
         st.caption("Detects delays and computes detours for public bus commuters intersecting the incident zone.")
-
         if transit_res:
             for route in transit_res:
-                st.markdown(
-                    f"""
-                    <div style="background-color: #fff9db; border-left: 5px solid #fab005; padding: 15px; border-radius: 4px; margin-bottom: 12px;">
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                            <img src="https://img.icons8.com/color/48/bus.png" width="22" height="22"/>
-                            <b style="color:#f59f00; font-size:15px;">{route['name']}</b>
-                            <span style="background-color:#ffe3e3; color:#f03e3e; font-size:11px; font-weight:600; padding:2px 6px; border-radius:4px; margin-left:10px;">
-                                {route['status']}
-                            </span>
-                        </div>
-                        Standard Path: <span style="font-size:13px; color:#495057;">{route['standard_stops']}</span><br>
-                        Diverted Path: <span style="font-size:13px; color:#495057; font-weight:500;">{route['diverted_stops']}</span><br>
-                        Estimated Delay: <b>+{route['estimated_delay_mins']} minutes</b><br>
-                        <b style="color:#d9480f;">Commuter advisory:</b> {route['shifted_stop_advise']}<br>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                st.markdown(f'<div style="background-color:#ffffff;border:1px solid #E4E7EC;border-left:3px solid #C2740C;padding:18px 20px;border-radius:10px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><img src="https://img.icons8.com/color/48/bus.png" width="20" height="20"/><b style="color:#0B1320;font-family:Archivo,Inter,sans-serif;font-size:14px;">{route["name"]}</b><span style="background-color:#FBEAE8;color:#C8372E;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;margin-left:10px;">{route["status"]}</span></div><span style="color:#8B95A5;font-size:13px;">Standard Path</span> <span style="font-size:13px;color:#1F2937;">{route["standard_stops"]}</span><br><span style="color:#8B95A5;font-size:13px;">Diverted Path</span> <span style="font-size:13px;color:#1F2937;font-weight:500;">{route["diverted_stops"]}</span><br><span style="color:#8B95A5;font-size:13px;">Estimated Delay</span> <b>+{route["estimated_delay_mins"]} minutes</b><br><b style="color:#C2740C;">Commuter advisory —</b> {route["shifted_stop_advise"]}</div>', unsafe_allow_html=True)
         else:
             st.success("No active BMTC transit routes are disrupted by this incident.")
 
     st.markdown("---")
-    
-    # PDF download brief (Uses clean text download)
-    st.markdown(
-        """
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
-            <img src="https://img.icons8.com/color/48/download.png" width="24" height="24"/>
-            <b style="font-size:16px;">Download Command Documentation</b>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    st.download_button(
-        "Download Brief Report",
-        data=command_brief,
-        file_name="gridlock_command_brief.md",
-        mime="text/markdown",
-        use_container_width=True,
-    )
 
-    # 🗺️ MAP DISPLAY AT THE BOTTOM
+    # Download brief
+    st.markdown('<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><img src="https://img.icons8.com/color/48/download.png" width="24" height="24"/><b style="font-size:16px;">Download Command Documentation</b></div>', unsafe_allow_html=True)
+    st.download_button("Download Brief Report", data=command_brief, file_name="gridlock_command_brief.md", mime="text/markdown", use_container_width=True)
+
+    # NEW: Mappls Map at the bottom
     st.markdown("---")
-    st.markdown(
-        """
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom: 10px;">
-            <img src="https://img.icons8.com/color/48/map.png" width="24" height="24"/>
-            <b style="font-size:16px;">Affected Network & Active Mitigation Routing</b>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    event_map = build_network_map(
-        inp["zone"], 
-        risk, 
-        risk_score, 
-        routing_res, 
-        corridor_res, 
-        dispatch_res
-    )
-    st_folium(event_map, use_container_width=True, height=500)
+    st.markdown('<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><img src="https://img.icons8.com/color/48/map.png" width="24" height="24"/><b style="font-size:16px;">Live Affected Network & Diversion Routes</b></div>', unsafe_allow_html=True)
+    st.caption(f"📍 {inp['formatted_address']} | Affected radius, real road diversion routes, nearby police & hospitals")
+
+    map_html = build_mappls_map(inp["lat"], inp["lng"], risk, risk_score, inp["location_input"], routing_res, corridor_res, dispatch_res)
+    components.html(map_html, height=520)
 
 else:
-    # Home default instructions
     st.info("Fill in the event details in the left-hand sidebar control panel and click 'Simulate Mitigation Strategy' to run calculations.")
-    st.markdown(
-        """
-        ### System Capabilities
-        This system runs real-time spatial calculations across Bengaluru's road graph.
-        - **Digital Twin Risk Profile**: Categorizes incident impacts based on temporal and categorical ML models.
-        - **Dynamic Diversion Simulator**: Calculates shortest paths using NetworkX Dijkstra routing based on congestion weights.
-        - **Green Corridor Planner**: Calculates preemptive paths to major hospitals and computes intersection ETAs.
-        - **Police Dispatch Optimizer**: Dispatches emergency personnel from stations by optimizing travel distances and station capacities.
-        - **BMTC Transit Advisor**: Reroutes public transport lines and alerts commuters of bus stops to bypass.
-        """
-    )
+    st.markdown("""
+    ### System Capabilities
+    This system runs real-time spatial calculations across Bengaluru's road graph.
+    - **Digital Twin Risk Profile**: Categorizes incident impacts based on temporal and categorical ML models.
+    - **Dynamic Diversion Simulator**: Calculates shortest paths using NetworkX Dijkstra routing based on congestion weights.
+    - **Green Corridor Planner**: Calculates preemptive paths to major hospitals and computes intersection ETAs.
+    - **Police Dispatch Optimizer**: Dispatches emergency personnel from stations by optimizing travel distances and station capacities.
+    - **BMTC Transit Advisor**: Reroutes public transport lines and alerts commuters of bus stops to bypass.
+    - **Live Mappls Map**: Shows exact event location, affected zone radius, real road diversion routes, and nearby police/hospitals.
+    """)
