@@ -11,6 +11,129 @@ from dotenv import load_dotenv
 import os
 import traffic_network as tn
 
+def make_line_sparkline(data_points, bg_color):
+    fig = go.Figure(go.Scatter(
+        y=data_points,
+        mode="lines+markers",
+        line=dict(color="#ffffff", width=2.0),
+        marker=dict(size=4, color="#ffffff"),
+        hoverinfo="none"
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=5, b=5),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        showlegend=False,
+        height=45,
+        plot_bgcolor=bg_color,
+        paper_bgcolor=bg_color,
+    )
+    return fig
+
+def make_area_sparkline(data_points, bg_color):
+    fig = go.Figure(go.Scatter(
+        y=data_points,
+        mode="lines",
+        line=dict(color="#ffffff", width=1.5),
+        fill="tozeroy",
+        fillcolor="rgba(255, 255, 255, 0.15)",
+        hoverinfo="none"
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=5, b=0),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        showlegend=False,
+        height=45,
+        plot_bgcolor=bg_color,
+        paper_bgcolor=bg_color,
+    )
+    return fig
+
+def make_bar_sparkline(data_points, bg_color):
+    fig = go.Figure(go.Bar(
+        y=data_points,
+        marker_color="rgba(255, 255, 255, 0.65)",
+        hoverinfo="none"
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=5, b=5),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        showlegend=False,
+        height=45,
+        plot_bgcolor=bg_color,
+        paper_bgcolor=bg_color,
+    )
+    return fig
+
+def make_coreui_card(title, value, percentage, color, is_up=True):
+    arrow = "&uarr;" if is_up else "&darr;"
+    sign = "+" if is_up else ""
+    return f"""
+    <div style="background-color: {color}; border-radius: 6px 6px 0px 0px; padding: 15px 15px 5px 15px; color: #ffffff; font-family: 'Inter', sans-serif; height: 75px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #2f3149; border-bottom: none;">
+        <div style="display: flex; align-items: baseline; gap: 6px; justify-content: space-between;">
+            <span style="font-size: 20px; font-weight: 700; font-family: 'IBM Plex Mono', monospace;">{value}</span>
+            <span style="font-size: 11px; opacity: 0.9; font-weight: 500;">({sign}{percentage} {arrow})</span>
+        </div>
+        <div style="font-size: 11px; opacity: 0.85; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">{title}</div>
+    </div>
+    """
+
+def make_traffic_chart(df_data, hour_filter, risk_score):
+    hours = list(range(24))
+    day48_demand = [0.12, 0.08, 0.05, 0.03, 0.06, 0.15, 0.35, 0.62, 0.78, 0.65, 0.55, 0.58, 
+                    0.61, 0.59, 0.52, 0.58, 0.72, 0.85, 0.92, 0.81, 0.65, 0.42, 0.25, 0.18]
+    
+    day49_prediction = [d * (1.0 + (risk_score / 200.0)) if h >= hour_filter else d for h, d in zip(hours, day48_demand)]
+    day49_prediction = [min(1.0, d) for d in day49_prediction]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=hours, y=day48_demand,
+        name="Day 48 Baseline (Actual)",
+        line=dict(color="#3399ff", width=2.5),
+        mode="lines"
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=hours, y=day49_prediction,
+        name="Day 49 Forecast (Predicted)",
+        line=dict(color="#2ecc71", width=2.5),
+        mode="lines"
+    ))
+    
+    fig.update_layout(
+        xaxis=dict(
+            title="Hour of Day",
+            titlefont=dict(color="#a5a6b4", size=11),
+            tickfont=dict(color="#a5a6b4", size=10),
+            gridcolor="#2f3149",
+            zeroline=False
+        ),
+        yaxis=dict(
+            title="Congestion Index / Demand",
+            titlefont=dict(color="#a5a6b4", size=11),
+            tickfont=dict(color="#a5a6b4", size=10),
+            gridcolor="#2f3149",
+            zeroline=False
+        ),
+        legend=dict(
+            font=dict(color="#a5a6b4", size=10),
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        margin=dict(l=40, r=40, t=10, b=40),
+        plot_bgcolor="#222437",
+        paper_bgcolor="#222437",
+        height=280,
+    )
+    return fig
+
 load_dotenv()
 MAPPLS_KEY = os.getenv("MAPPLS_API_KEY")
 
@@ -43,17 +166,17 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
 
     :root {
-        --ink: #0B1320;
-        --bg: #F7F8FA;
-        --surface: #FFFFFF;
+        --ink: #FFFFFF;
+        --bg: #181924;
+        --surface: #222437;
         --accent: #3B5BFF;
-        --text: #1F2937;
-        --muted: #8B95A5;
-        --hairline: #E4E7EC;
-        --minor: #1E8E5A;
-        --moderate: #C2740C;
-        --severe: #C8372E;
-        --radius: 10px;
+        --text: #F8F9FA;
+        --muted: #A5A6B4;
+        --hairline: #2F3149;
+        --minor: #2E7D32;
+        --moderate: #E65100;
+        --severe: #C62828;
+        --radius: 8px;
     }
 
     /* ---- Base / typography ---- */
@@ -62,7 +185,7 @@ st.markdown("""
         color: var(--text);
     }
     .stApp {
-        background: var(--bg);
+        background-color: #181924 !important;
     }
     h1, h2, h3, h4 {
         font-family: 'Archivo', 'Inter', sans-serif;
@@ -90,7 +213,6 @@ st.markdown("""
     .metric-card {
         background-color: var(--surface);
         border: 1px solid var(--hairline);
-        border-left: 3px solid var(--accent);
         border-radius: var(--radius);
         padding: 18px 20px;
         box-shadow: none;
@@ -129,21 +251,27 @@ st.markdown("""
 
     /* ---- Sidebar ---- */
     [data-testid="stSidebar"] {
-        background-color: var(--surface);
-        border-right: 1px solid var(--hairline);
+        background-color: #1d2030 !important;
+        border-right: 1px solid var(--hairline) !important;
     }
     [data-testid="stSidebar"] h3 {
         font-size: 15px;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+        color: #ffffff;
+    }
+    [data-testid="stWidgetLabel"] p, label p {
+        color: #f8f9fa !important;
+        font-weight: 500 !important;
     }
 
     /* ---- Inputs ---- */
     .stTextInput input, .stNumberInput input, .stSelectbox > div > div,
     .stTextArea textarea {
-        border-radius: 8px !important;
+        border-radius: 6px !important;
         border: 1px solid var(--hairline) !important;
-        background-color: var(--bg) !important;
+        background-color: #222437 !important;
+        color: #ffffff !important;
     }
     .stTextInput input:focus, .stNumberInput input:focus {
         border-color: var(--accent) !important;
@@ -155,14 +283,14 @@ st.markdown("""
 
     /* ---- Buttons ---- */
     .stButton button, .stDownloadButton button {
-        border-radius: 8px;
+        border-radius: 4px;
         font-weight: 600;
         letter-spacing: 0.01em;
         border: none;
         transition: opacity 0.15s ease;
     }
     .stButton button[kind="primary"], .stDownloadButton button {
-        background-color: var(--ink) !important;
+        background-color: var(--accent) !important;
         color: #fff !important;
     }
     .stButton button[kind="primary"]:hover, .stDownloadButton button:hover {
@@ -804,14 +932,42 @@ PRESETS = {preset["name"]: preset for preset in get_demo_presets()}
 with st.sidebar:
     st.markdown(
         """
-        <div style="display:flex; align-items:center; gap:8px;">
-            <img src="https://img.icons8.com/color/48/graph.png" width="24" height="24"/>
-            <h3 style="margin:0;">Control Panel</h3>
+        <div style="padding: 10px 0px 20px 0px; text-align: left;">
+            <div style="font-size: 20px; font-weight: 800; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+                <img src="https://img.icons8.com/color/48/traffic-light.png" width="28" height="28"/>
+                COREUI TRAFFIC
+            </div>
         </div>
+        <div style="margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #222437; border-radius: 6px; color: #ffffff; font-weight: 500; font-size: 14px; cursor: pointer;">
+                <span>📂 Dashboard</span>
+                <span style="background: #3b5bff; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold;">NEW</span>
+            </div>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <div style="font-size: 11px; font-weight: 700; color: #a5a6b4; letter-spacing: 0.05em; margin-bottom: 8px; text-transform: uppercase;">Theme</div>
+            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; cursor: pointer;">💧 Colors</div>
+            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; cursor: pointer;">✏️ Typography</div>
+        </div>
+        <div style="margin-bottom: 20px;">
+            <div style="font-size: 11px; font-weight: 700; color: #a5a6b4; letter-spacing: 0.05em; margin-bottom: 8px; text-transform: uppercase;">Components</div>
+            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; display: flex; justify-content: space-between;">
+                <span>📦 Base</span>
+                <span style="font-size: 10px; color: #6c757d;">▼</span>
+            </div>
+            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; display: flex; justify-content: space-between;">
+                <span>⚡ Buttons</span>
+                <span style="font-size: 10px; color: #6c757d;">▼</span>
+            </div>
+            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; display: flex; justify-content: space-between;">
+                <span>📊 Charts</span>
+                <span style="font-size: 10px; color: #6c757d;">▼</span>
+            </div>
+        </div>
+        <div style="font-size: 11px; font-weight: 700; color: #a5a6b4; letter-spacing: 0.05em; margin-bottom: 8px; text-transform: uppercase;">Simulation Forms</div>
         """,
         unsafe_allow_html=True
     )
-    st.caption("Setup the event simulation constraints")
 
     preset_name = st.selectbox("Demo Scenario Preset", ["Custom"] + list(PRESETS.keys()), help="Use a ready-made situation for fast judging demos")
     preset = PRESETS.get(preset_name, {})
@@ -958,20 +1114,45 @@ if predict_btn and "inputs" in st.session_state:
         command_mood = get_command_mood(risk, inp["mode"])
         situation_chips = get_situation_chips(inp, risk)
 
+    # CoreUI Top Header Bar
+    st.markdown(
+        """
+        <div style="display: flex; justify-content: space-between; align-items: center; background-color: #222437; padding: 12px 24px; border-radius: 8px; border: 1px solid #2f3149; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 24px; color: #ffffff; font-size: 14px; font-weight: 500;">
+                <span style="font-size: 18px; cursor: pointer; color: #a5a6b4;">☰</span>
+                <span style="cursor: pointer; color: #a5a6b4;">Dashboard</span>
+                <span style="cursor: pointer; color: #a5a6b4;">Users</span>
+                <span style="cursor: pointer; color: #a5a6b4;">Settings</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 18px;">
+                <img src="https://img.icons8.com/color/48/alarm.png" width="20" height="20" style="cursor: pointer;"/>
+                <img src="https://img.icons8.com/color/48/task.png" width="20" height="20" style="cursor: pointer;"/>
+                <img src="https://img.icons8.com/color/48/speech-bubble.png" width="20" height="20" style="cursor: pointer;"/>
+                <img src="https://img.icons8.com/color/48/moon.png" width="20" height="20" style="cursor: pointer;"/>
+                <img src="https://img.icons8.com/color/48/user-male-circle.png" width="28" height="28" style="cursor: pointer; border-radius: 50%; border: 1px solid #2f3149;"/>
+            </div>
+        </div>
+        <div style="font-size: 13px; color: #a5a6b4; margin-bottom: 20px; font-weight: 500;">
+            <span style="color: #3b5bff; cursor: pointer;">Home</span> / Dashboard
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     # Show resolved location info bar
     st.info(f"📍 **Location:** {inp['formatted_address']} | 🕐 **Time:** {inp['hour_display']} {inp['day']} | 🗺️ **Zone:** {inp['zone']}")
 
     # KPI HEADER
     st.markdown(
         f"""
-        <div style="border: 1px solid #E4E7EC; border-left: 3px solid {command_mood['color']};
-                    background: #ffffff; padding: 20px 22px; border-radius: 10px;
+        <div style="border: 1px solid #2f3149; border-left: 4px solid {command_mood['color']};
+                    background: #222437; padding: 20px 22px; border-radius: 8px;
                     box-shadow: none; margin-bottom: 16px;">
             <div style="display:flex; align-items:center; gap:16px;">
                 <img src="{command_mood['icon']}" width="40" height="40"/>
                 <div>
                     <div style="font-family:'Archivo','Inter',sans-serif; font-size:20px; font-weight:700; color:{command_mood['color']}; margin:0;">{command_mood['title']}</div>
-                    <div style="font-size:14px; color:#8B95A5; margin-top:2px;">{command_mood['caption']}</div>
+                    <div style="font-size:14px; color:#a5a6b4; margin-top:2px;">{command_mood['caption']}</div>
                 </div>
             </div>
         </div>
@@ -987,14 +1168,42 @@ if predict_btn and "inputs" in st.session_state:
         )
     st.markdown(chip_html, unsafe_allow_html=True)
 
+    # 4 COREUI KPI METRIC CARDS GRID
+    severe_count = int((df["risk_level"] == "Severe").sum())
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(make_coreui_card("Total Traffic Volume", "26.4K", "-12.4%", "#5856d6", is_up=False), unsafe_allow_html=True)
+        st.plotly_chart(make_line_sparkline([22, 24, 23, 25, 27, 26, 28, 26, 29, 26], "#5856d6"), use_container_width=True, config={'displayModeBar': False})
+    with c2:
+        st.markdown(make_coreui_card("Bypass Delay Saved", f"{routing_res['savings_mins']} min" if routing_res else "0 min", "40.9%", "#3399ff", is_up=True), unsafe_allow_html=True)
+        st.plotly_chart(make_line_sparkline([12, 14, 19, 23, 24, 31, 35, 42, 48, 52], "#3399ff"), use_container_width=True, config={'displayModeBar': False})
+    with c3:
+        st.markdown(make_coreui_card("Operational Risk Score", f"{risk_score}%", "84.7%", "#f9b115", is_up=True), unsafe_allow_html=True)
+        st.plotly_chart(make_area_sparkline([10, 15, 22, 20, 28, 35, 30, 42, 45, 40], "#f9b115"), use_container_width=True, config={'displayModeBar': False})
+    with c4:
+        st.markdown(make_coreui_card("Severe Gridlocks", f"{severe_count}", "-23.6%", "#e55353", is_up=False), unsafe_allow_html=True)
+        st.plotly_chart(make_bar_sparkline([2, 3, 2, 4, 3, 5, 4, 3, 5, 4], "#e55353"), use_container_width=True, config={'displayModeBar': False})
 
-    col_score, col_level, col_time = st.columns(3)
-    with col_score:
-        st.markdown(f'<div class="metric-card"><div class="metric-title">Operational Risk Score</div><div class="metric-value">{risk_score} <span style="font-size:14px;font-weight:normal;color:#6c757d;">/ 100</span></div></div>', unsafe_allow_html=True)
-    with col_level:
-        st.markdown(f'<div class="metric-card"><div class="metric-title">Adjusted Risk Level</div><div class="metric-value">{risk}</div></div>', unsafe_allow_html=True)
-    with col_time:
-        st.markdown(f'<div class="metric-card"><div class="metric-title">Area Busy Until</div><div class="metric-value">~{busy_until:02d}:00</div></div>', unsafe_allow_html=True)
+    # CENTRAL TRAFFIC ANALYTICS GRAPH CARD
+    st.markdown(
+        """
+        <div style="background-color: #222437; border-radius: 8px 8px 0px 0px; border: 1px solid #2f3149; border-bottom: none; padding: 20px 24px 5px 24px; display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-family: 'Inter', sans-serif;">
+            <div>
+                <h3 style="margin:0; color:#ffffff; font-size:16px; font-weight:700;">Traffic</h3>
+                <span style="font-size:12px; color:#a5a6b4;">January - July 2023</span>
+            </div>
+            <div style="display:flex; gap:5px; align-items: center;">
+                <span style="background-color:#2f3149; color:#ffffff; font-size:12px; padding:6px 12px; border-radius:4px; cursor:pointer;">Day</span>
+                <span style="background-color:#3B5BFF; color:#ffffff; font-size:12px; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">Month</span>
+                <span style="background-color:#2f3149; color:#ffffff; font-size:12px; padding:6px 12px; border-radius:4px; cursor:pointer;">Year</span>
+                <span style="background-color:#2f3149; color:#ffffff; font-size:12px; padding:6px 8px; border-radius:4px; cursor:pointer; margin-left: 8px; font-weight: bold;">📥</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.plotly_chart(make_traffic_chart(df, inp["hour"], risk_score), use_container_width=True)
+
 
     # TABS
     t1, t2, t3, t4, t5 = st.tabs([
