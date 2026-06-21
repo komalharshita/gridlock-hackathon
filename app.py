@@ -718,7 +718,7 @@ def build_folium_map(lat, lng, risk_level, risk_score, incident_node, target_hos
     for u, v in tn.ROAD_EDGES:
         u_coords = tn.NODE_COORDS[u]
         v_coords = tn.NODE_COORDS[v]
-        folium.Polyline(
+        folium.PolyLine(
             locations=[u_coords, v_coords],
             color="#2f3149",
             weight=1.5,
@@ -729,7 +729,7 @@ def build_folium_map(lat, lng, risk_level, risk_score, incident_node, target_hos
     # Draw Commuter Path Comparison (Standard vs diversion)
     if routing_res:
         std_coords = [tn.NODE_COORDS[node] for node in routing_res["std_path"]]
-        folium.Polyline(
+        folium.PolyLine(
             locations=std_coords,
             color="#e55353",
             weight=3.5,
@@ -739,7 +739,7 @@ def build_folium_map(lat, lng, risk_level, risk_score, incident_node, target_hos
         ).add_to(m)
 
         congested_coords = [tn.NODE_COORDS[node] for node in routing_res["congested_path"]]
-        folium.Polyline(
+        folium.PolyLine(
             locations=congested_coords,
             color="#2ecc71",
             weight=4.5,
@@ -750,7 +750,7 @@ def build_folium_map(lat, lng, risk_level, risk_score, incident_node, target_hos
     # Draw Emergency Green Corridor Path
     if corridor_res:
         corridor_coords = corridor_res["coords_path"]
-        folium.Polyline(
+        folium.PolyLine(
             locations=corridor_coords,
             color="#3399ff",
             weight=5.0,
@@ -1081,26 +1081,7 @@ with st.sidebar:
                 <span style="background: #3b5bff; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold;">NEW</span>
             </div>
         </div>
-        <div style="margin-bottom: 15px;">
-            <div style="font-size: 11px; font-weight: 700; color: #a5a6b4; letter-spacing: 0.05em; margin-bottom: 8px; text-transform: uppercase;">Theme</div>
-            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; cursor: pointer;">💧 Colors</div>
-            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; cursor: pointer;">✏️ Typography</div>
-        </div>
-        <div style="margin-bottom: 20px;">
-            <div style="font-size: 11px; font-weight: 700; color: #a5a6b4; letter-spacing: 0.05em; margin-bottom: 8px; text-transform: uppercase;">Components</div>
-            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; display: flex; justify-content: space-between;">
-                <span>📦 Base</span>
-                <span style="font-size: 10px; color: #6c757d;">▼</span>
-            </div>
-            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; display: flex; justify-content: space-between;">
-                <span>⚡ Buttons</span>
-                <span style="font-size: 10px; color: #6c757d;">▼</span>
-            </div>
-            <div style="padding: 8px 12px; font-size: 14px; color: #a5a6b4; display: flex; justify-content: space-between;">
-                <span>📊 Charts</span>
-                <span style="font-size: 10px; color: #6c757d;">▼</span>
-            </div>
-        </div>
+
         <div style="font-size: 11px; font-weight: 700; color: #a5a6b4; letter-spacing: 0.05em; margin-bottom: 8px; text-transform: uppercase;">Simulation Forms</div>
         """,
         unsafe_allow_html=True
@@ -1324,7 +1305,7 @@ if True:
         <div style="background-color: #222437; border-radius: 8px 8px 0px 0px; border: 1px solid #2f3149; border-bottom: none; padding: 20px 24px 5px 24px; display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-family: 'Inter', sans-serif;">
             <div>
                 <h3 style="margin:0; color:#ffffff; font-size:16px; font-weight:700;">Traffic</h3>
-                <span style="font-size:12px; color:#a5a6b4;">January - July 2023</span>
+                <span style="font-size:12px; color:#a5a6b4;">Expected Event Horizon (24 Hrs)</span>
             </div>
             <div style="display:flex; gap:5px; align-items: center;">
                 <span style="background-color:#2f3149; color:#ffffff; font-size:12px; padding:6px 12px; border-radius:4px; cursor:pointer;">Day</span>
@@ -1384,7 +1365,7 @@ if True:
         st.markdown("**Past Similar Events in Database:**")
         past_events = get_past_similar_events(inp["event_cause"], inp["zone"])
         if len(past_events) > 0:
-            st.dataframe(past_events, use_container_width=True)
+            st.dataframe(past_events, hide_index=True, use_container_width=True)
         else:
             st.info("No matching historical records found for this subset.")
 
@@ -1431,7 +1412,7 @@ if True:
                 st.markdown("**Green Corridor Signal Preemption Schedule:**")
                 schedule_df = pd.DataFrame(corridor_res["schedule"])
                 schedule_df.columns = ["Intersection Node", "Distance (km)", "ETA", "Override Active Window"]
-                st.dataframe(schedule_df, use_container_width=True)
+                st.dataframe(schedule_df, hide_index=True, use_container_width=True)
         else:
             st.warning("Could not compute emergency corridor routing path.")
 
@@ -1448,7 +1429,7 @@ if True:
         if dispatch_res:
             st.markdown("**Optimized Dispatch Schedule:**")
             disp_data = [{"Police Station Depot": d["station"], "Officers Sent": d["officers_dispatched"], "Vehicles Sent": d["cars_dispatched"], "Travel Time ETA": f"{d['travel_time_mins']} mins", "Dispatch Status": d["status"]} for d in dispatch_res]
-            st.dataframe(pd.DataFrame(disp_data), use_container_width=True)
+            st.dataframe(pd.DataFrame(disp_data), hide_index=True, use_container_width=True)
             if unmet_off > 0 or unmet_cars > 0:
                 st.error(f"Warning: Insufficient resources. Unmet: {unmet_off} Officers, {unmet_cars} Patrol Cars. Initiate regional mutual aid callbacks.")
             else:
@@ -1469,7 +1450,9 @@ if True:
 
     # Download brief
     st.markdown('<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><img src="https://img.icons8.com/color/48/download.png" width="24" height="24"/><b style="font-size:16px;">Download Command Documentation</b></div>', unsafe_allow_html=True)
-    st.download_button("Download Brief Report", data=command_brief, file_name="gridlock_command_brief.md", mime="text/markdown", use_container_width=True)
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.download_button("Download Brief Report", data=command_brief, file_name="gridlock_command_brief.md", mime="text/markdown", use_container_width=True)
 
     # NEW: Mappls Map at the bottom
     st.markdown("---")
@@ -1481,4 +1464,4 @@ if True:
         components.html(map_html, height=520)
     else:
         folium_map = build_folium_map(inp["lat"], inp["lng"], risk, risk_score, inp["zone"], inp["target_hospital"], routing_res, corridor_res, dispatch_res)
-        st_folium(folium_map, height=520, use_container_width=True, returned_objects=[])
+        st_folium(folium_map, height=520, width="stretch", returned_objects=[])
