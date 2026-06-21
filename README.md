@@ -29,6 +29,31 @@ streamlit run app.py
 
 See `docs/Phase2_Command_Center_Strategy.md` for the demo script and pitch positioning.
 
+## Prototype Submission & Judging Criteria Mapping
+
+The **Gridlock Sentinel Command Center** prototype has been engineered to directly address the hackathon's core judging criteria:
+
+### 1. Technical Rigor (Algorithm & Modeling Depth)
+* **GBDT Predictive Risk Engine**: Combines the offline machine learning model (trained on historical Bengaluru event records) with real-time operational risk adjustments (blocked lanes, rain watch, peak hour, preparation lead time) to predict situational severity.
+* **SHAP Explainability**: Integrates SHAP TreeExplainer values directly into the "Event Digital Twin" UI, allowing command operators to see exactly which features (Time of Day, Event Type, Location, etc.) are driving the risk prediction.
+* **Real-Street Dijkstra Routing Engine**: Leverages a Python `networkx` spatial road graph of Bengaluru (20 main nodes, 25 connecting arterial edges) to calculate congested travel times vs. optimal diversion detours when an incident occurs.
+* **Signal Preemption Scheduler**: Auto-snaps hospital coordinates to the road network, calculating emergency corridor ETA windows and generating a detailed green-light preemption override schedule for traffic police controllers.
+* **Police Proximity Allocator**: Solves a proximity-based resource allocation problem to dispatch officers and vehicles from nearby stations under capacity constraints.
+
+### 2. Visual Quality & User Experience (CoreUI Aesthetics)
+* **CoreUI Flat Dark Skin**: Built using a premium flat dark palette (App background: `#181924`, Cards: `#222437`, Sidebar: `#1d2030`) utilizing modern typography (Inter, IBM Plex Mono) and consistent components.
+* **Zero-Emoji Professional Standard**: Completely replaced all emojis with high-quality Icons8 SVG/PNG markers and icons to deliver an enterprise-grade visual experience.
+* **Dynamic, Responsive Reruns**: Removed all button-click gating. The dashboard, metrics, Plotly sparkline charts, and interactive map update in real-time instantly as the operator changes sidebar sliders.
+* **Dynamic Hospital Recommendation**: Automatically computes the closest medical facility based on geocoded input location and sets it as the default, simplifying operator workflows.
+
+### 3. Real-World Impact & Operational Feasibility
+* **BMTC Commuter Transit Advisor**: Scans routes disrupted by the incident zone, calculates detour delay times, and suggests shifted boarding stop coordinates to prevent commuter isolation.
+* **Downloadable Command Brief**: Generates a standardized markdown report (`gridlock_command_brief.md`) containing the complete scenario data, risk drivers, dispatched resource plans, and emergency timelines for offline sharing.
+
+### 4. Demo Link & Setup Stability
+* **Demo URL**: [https://gridlock-sentinel.streamlit.app/](https://gridlock-sentinel.streamlit.app/)
+* **Hybrid Map Loading (Zero-Failure)**: The map automatically uses the **Mappls (MapmyIndia) Vector Map SDK** if the `MAPPLS_API_KEY` is present in secrets. If the key is not set, it instantly falls back to a custom **Folium Dark Matter** map, preventing script load freezes and providing a flawless evaluation flow.
+
 ## Team Roles
 
 | Member | Role | Responsibility |
