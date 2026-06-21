@@ -109,15 +109,13 @@ def make_traffic_chart(df_data, hour_filter, risk_score):
     
     fig.update_layout(
         xaxis=dict(
-            title="Hour of Day",
-            titlefont=dict(color="#a5a6b4", size=11),
+            title=dict(text="Hour of Day", font=dict(color="#a5a6b4", size=11)),
             tickfont=dict(color="#a5a6b4", size=10),
             gridcolor="#2f3149",
             zeroline=False
         ),
         yaxis=dict(
-            title="Congestion Index / Demand",
-            titlefont=dict(color="#a5a6b4", size=11),
+            title=dict(text="Congestion Index / Demand", font=dict(color="#a5a6b4", size=11)),
             tickfont=dict(color="#a5a6b4", size=10),
             gridcolor="#2f3149",
             zeroline=False
