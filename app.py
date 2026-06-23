@@ -70,6 +70,39 @@ def make_bar_sparkline(data_points, bg_color):
     )
     return fig
 
+def make_past_event_card(row):
+    risk_level = row.get("risk_level", "Moderate")
+    accent = {"Minor": "#2e7d32", "Moderate": "#e65100", "Severe": "#c62828"}.get(risk_level, "#3B5BFF")
+    icon = {"Minor": "https://img.icons8.com/color/48/checked.png",
+            "Moderate": "https://img.icons8.com/color/48/warning-shield.png",
+            "Severe": "https://img.icons8.com/color/48/high-importance.png"}.get(risk_level, "https://img.icons8.com/color/48/info.png")
+    if pd.notna(row["hour"]):
+        hour = int(row["hour"])
+        hour_label = f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}"
+    else:
+        hour_label = "Unknown time"
+    day_label = row["day_of_week"] if pd.notna(row["day_of_week"]) else "Unknown day"
+    crowd_label = row["crowd_proxy"] if pd.notna(row["crowd_proxy"]) else "Unknown"
+    zone_label = row["zone"] if pd.notna(row["zone"]) else "Unknown zone"
+    event_label = row["event_cause"].replace("_", " ").title() if pd.notna(row["event_cause"]) else "Unknown event"
+    return f"""
+    <div style="background-color:#222437;border:1px solid #2f3149;border-left:3px solid {accent};border-radius:10px;padding:16px 18px;height:100%;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <img src="{icon}" width="20" height="20"/>
+                <b style="color:#ffffff;font-family:Archivo,Inter,sans-serif;font-size:14px;">{event_label}</b>
+            </div>
+            <span style="background-color:{accent};color:#ffffff;font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:999px;">{risk_level}</span>
+        </div>
+        <div style="color:#f8f9fa;font-size:13px;margin-bottom:6px;line-height:1.4;">📍 {row["address"]}</div>
+        <div style="color:#a5a6b4;font-size:12.5px;margin-bottom:4px;">Zone: <span style="color:#f8f9fa;font-weight:500;">{zone_label}</span></div>
+        <div style="display:flex;gap:14px;margin-top:10px;">
+            <div style="color:#a5a6b4;font-size:12px;">🕒 <span style="color:#f8f9fa;">{hour_label}, {day_label}</span></div>
+            <div style="color:#a5a6b4;font-size:12px;">👥 <span style="color:#f8f9fa;">{crowd_label} crowd</span></div>
+        </div>
+    </div>
+    """
+
 def make_coreui_card(title, value, percentage, color, is_up=True):
     arrow = "&uarr;" if is_up else "&darr;"
     sign = "+" if is_up else ""
@@ -1362,10 +1395,14 @@ if True:
         st.plotly_chart(fig_explain, use_container_width=True)
 
         st.markdown("---")
-        st.markdown("**Past Similar Events in Database:**")
+        st.markdown('<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><img src="https://img.icons8.com/color/48/database.png" width="22" height="22"/><b style="font-size:16px;">Past Similar Events in Database</b></div>', unsafe_allow_html=True)
         past_events = get_past_similar_events(inp["event_cause"], inp["zone"])
         if len(past_events) > 0:
-            st.dataframe(past_events, hide_index=True, use_container_width=True)
+            cols = st.columns(2)
+            for idx, row in past_events.iterrows():
+                with cols[idx % 2]:
+                    st.markdown(make_past_event_card(row), unsafe_allow_html=True)
+                    st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
         else:
             st.info("No matching historical records found for this subset.")
 
